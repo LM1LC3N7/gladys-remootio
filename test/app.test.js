@@ -575,6 +575,58 @@ test('I2: the history replayed after the outage shows the door moved: the kept c
   );
 });
 
+async function keepCloseDuringOutage({ gladys, app, ready, advance, fake }) {
+  await ready();
+  await createAll(gladys);
+  fake.silent = true;
+  fake.kick();
+  await until(() => app.links.get(1).state !== 'ready');
+  const ack = press(gladys, 'close');
+  for (let i = 0; i < 16; i += 1) {
+    await tick();
+    await advance(250);
+  }
+  assert.match((await ack).error, /La fermeture est gardée/);
+}
+
+test('I2: a history 20 ms then 300 ms after the first answer drops the kept close', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await keepCloseDuringOutage({ gladys, app, fake, ready, advance });
+  fake.offlineEvent({ type: 'StateChange', state: 'closed' });
+  fake.offlineEvent({ type: 'StateChange', state: 'open' });
+  fake.historyLate = [20, 300];
+  fake.silent = false;
+  fake.kick();
+  // The virtual clock stays still while the history arrives (real time).
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 1000 });
+  await until(() => app.data.pendingCloses[SERIAL] === undefined, 3000);
+  await advance(5000);
+  assert.equal(fake.pulses.length, 0, 'not sent onto the car that comes in');
+  assert.match(statusFr(gladys), /la porte a bougé pendant la coupure/);
+});
+
+test('I2: no history: the kept close leaves after a PING/PONG and 1 s of ready session', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await keepCloseDuringOutage({ gladys, app, fake, ready, advance });
+  const before = fake.received.length;
+  fake.silent = false;
+  fake.kick();
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 250 });
+  assert.equal(fake.pulses.length, 0, 'not at once on the session ready');
+  await advanceUntil(advance, () => fake.pulses.length === 1, { ms: 5000, step: 100 });
+  const order = fake.received.slice(before).map((r) => r.type ?? r.action.type);
+  assert.ok(
+    order.indexOf('PING') > -1 && order.indexOf('PING') < order.indexOf('CLOSE'),
+    `${order}`,
+  );
+  assert.equal(fake.pulses[0].type, 'CLOSE');
+  assert.equal(app.data.pendingCloses[SERIAL], undefined);
+});
+
 test('I3: another Remootio at the address is not "refused keys"; a refusal belongs to an address', async (t) => {
   const store = new MemoryStore();
   store.data.devices.aaaaaa111111 = { serial: 'aaaaaa111111', slot: 1, address: '', model: '' };

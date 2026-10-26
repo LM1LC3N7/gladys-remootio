@@ -409,7 +409,39 @@ export class RemootioApp {
       this.publishDevices().catch(() => {});
     }
     this.updateStatus();
-    this.resumePendingClose(link);
+    this.settleThenResumeClose(link, session);
+  }
+
+  /**
+   * A new session: the kept close waits for the history the Remootio replays,
+   * wherever it comes relative to the first answer. The device writes in
+   * order, so a history queued at authentication precedes the PONG; one more
+   * second of ready session covers a history sent later. The kept close is
+   * read again after that wait (a replayed move drops it).
+   */
+  settleThenResumeClose(link, session) {
+    const serial = session.identity?.serial;
+    if (!serial || !this.data.pendingCloses[serial]) {
+      return;
+    }
+    const readyAt = this.monotonic();
+    session
+      .ping(TIMINGS.pingTimeout)
+      .then(
+        () =>
+          new Promise((resolve) => {
+            const wait = Math.max(0, TIMINGS.closeSettle - (this.monotonic() - readyAt));
+            this.timers.setTimeout(resolve, wait);
+          }),
+      )
+      .then(
+        () => {
+          if (!this.stopped && link.session === session && session.ready) {
+            this.resumePendingClose(link);
+          }
+        },
+        () => session.close('no answer', undefined, { abort: true }),
+      );
   }
 
   /** The Remootio of a link: its record, bound to the slot (a positive proof: the keys work). */
@@ -564,14 +596,6 @@ export class RemootioApp {
     if (link.session !== session || !session.identity) {
       return;
     }
-    // A counter that does not move forward: a frame replayed within the session.
-    if (event.cnt !== undefined) {
-      if (session.lastCnt !== undefined && event.cnt <= session.lastCnt) {
-        this.logger.debug(`Remootio ${link.slot}: event ${event.cnt} replayed, ignored`);
-        return;
-      }
-      session.lastCnt = event.cnt;
-    }
     const serial = session.identity.serial;
     const pulse =
       (event.type === EVENT.RELAY_TRIGGER && event.keyType !== 'api key') ||
@@ -585,11 +609,20 @@ export class RemootioApp {
     const history =
       replayWindow ||
       (base !== undefined && (event.t100ms < base || (event.t100ms === base && !pulse)));
+    // Tested before the counter filter: a replayed frame tells the same.
+    if (history && moved && serial === this.serialOfSlot(link.slot)) {
+      this.dropPendingClose(serial, 'movedOffline');
+    }
+    // A counter that does not move forward: a frame replayed within the session.
+    if (event.cnt !== undefined) {
+      if (session.lastCnt !== undefined && event.cnt <= session.lastCnt) {
+        this.logger.debug(`Remootio ${link.slot}: event ${event.cnt} replayed, ignored`);
+        return;
+      }
+      session.lastCnt = event.cnt;
+    }
     if (history) {
       this.logger.debug(`Remootio ${link.slot}: past event ${event.type} ignored`);
-      if (moved && session.identity.serial === this.serialOfSlot(link.slot)) {
-        this.dropPendingClose(serial, 'movedOffline');
-      }
       return;
     }
     switch (event.type) {

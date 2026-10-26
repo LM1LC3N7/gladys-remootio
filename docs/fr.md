@@ -94,6 +94,9 @@ dit, si :
 
 Une ouverture partie entre-temps l'annule sans message.
 
+Pour laisser arriver cet historique, la fermeture gardée ne part qu'après un échange PING/PONG et au moins 1 s de
+session prête.
+
 ### Après l'envoi
 
 Si l'action a pu partir sans que la réponse arrive, Gladys répond « Commande envoyée, sans confirmation »,

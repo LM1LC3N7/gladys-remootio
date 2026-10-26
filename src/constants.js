@@ -63,6 +63,8 @@ export const TIMINGS = {
   /** A close not sent is sent again at the next session within this time, 3 times at most. */
   pendingCloseFor: 120_000,
   pendingCloseTries: 3,
+  /** A kept close waits this long in a ready session (after a PING/PONG) for a late history. */
+  closeSettle: 1000,
   /** Reads after a pulse (plus one at the end of the travel time). */
   followUps: [5000, 15_000],
   /** Added to the travel time for the guard of a pulse. */

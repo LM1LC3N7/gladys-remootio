@@ -76,6 +76,8 @@ export async function startFakeRemootio(options = {}) {
     relay: 'ok',
     /** Events kept while no client is connected, replayed after the next AUTH. */
     history: [],
+    /** Real ms after the first answer for each history event (undefined: before it). */
+    historyLate: undefined,
     /** The first QUERY of the next N connections is never answered (a slow link). */
     dropFirstQueries: 0,
     /** Actions answered by nothing (the device still acts on them). */
@@ -215,11 +217,13 @@ export async function startFakeRemootio(options = {}) {
       conn.lastId = id;
       fake.onAction?.(type);
       conn.queries = (conn.queries ?? 0) + 1;
+      let late = [];
       if (conn.queries === 1) {
-        // The history first, as the Remootio replays it after a reconnection.
-        for (const event of fake.history.splice(0)) {
-          conn.sendEncrypted({ event });
-        }
+        // The history first, as the Remootio replays it after a reconnection
+        // (or, with historyLate, `historyLate[i]` ms after the answer).
+        const history = fake.history.splice(0);
+        if (fake.historyLate) late = history;
+        else for (const event of history) conn.sendEncrypted({ event });
         if (fake.dropFirstQueries > 0) {
           fake.dropFirstQueries -= 1;
           return;
@@ -250,6 +254,14 @@ export async function startFakeRemootio(options = {}) {
             response: { type, id, success, state, t100ms, relayTriggered, errorCode },
           }),
         );
+      late.forEach((event, i) =>
+        setTimeout(
+          () => {
+            if (!conn.socket.destroyed) conn.sendEncrypted({ event });
+          },
+          fake.historyLate[i] ?? fake.historyLate.at(-1),
+        ),
+      );
       if (relayTriggered && fake.moveAfter !== undefined) {
         const target = type === 'OPEN' ? 'open' : 'closed';
         setTimeout(() => fake.setState(target), fake.moveAfter);

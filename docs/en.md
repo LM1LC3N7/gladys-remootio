@@ -90,6 +90,9 @@ detection) then protect someone under the door. It is dropped, and the status sa
 
 An opening that left meanwhile cancels it without a message.
 
+To let that history arrive, the kept close leaves only after a PING/PONG exchange and at least 1 s of ready
+session.
+
 ### After sending
 
 When the action may have left but its answer did not come, Gladys answers "Command sent, without

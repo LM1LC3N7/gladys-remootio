@@ -22,7 +22,8 @@ the notes of the version's GitHub Release.
   of the travel time after each pulse (also after a pulse of another key),
   saved before the pulse leaves (also after an "output busy" answer, never
   sent again); a close not sent in time is kept for the next connection
-  (2 minutes, 3 tries at most, dropped when the door moved meanwhile).
+  (2 minutes, 3 tries at most, dropped when the door moved meanwhile, even if the history comes after the
+  first answer: it leaves after a PING/PONG and 1 s of ready session).
 - Keys refused twice in a row (a challenge the keys cannot open) stop the
   connection attempts until other keys or another address are saved, or
   "Check the Remootio devices" succeeds; another Remootio at the address is
