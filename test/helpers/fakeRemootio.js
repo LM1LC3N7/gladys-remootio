@@ -74,6 +74,10 @@ export async function startFakeRemootio(options = {}) {
     badMac: false,
     /** OPEN/CLOSE: 'busy' answers ERR_RELAY_BUSY. */
     relay: 'ok',
+    /** Events kept while no client is connected, replayed after the next AUTH. */
+    history: [],
+    /** The first QUERY of the next N connections is never answered (a slow link). */
+    dropFirstQueries: 0,
     /** Actions answered by nothing (the device still acts on them). */
     dropActions: new Set(),
     /** Called with the action type when an action arrives (before any answer). */
@@ -82,7 +86,15 @@ export async function startFakeRemootio(options = {}) {
     moveAfter: 50,
     current: undefined,
   };
-  for (const key of ['silent', 'answerDelay', 'closeAfterAuth', 'badMac', 'relay', 'moveAfter']) {
+  for (const key of [
+    'silent',
+    'answerDelay',
+    'closeAfterAuth',
+    'badMac',
+    'relay',
+    'moveAfter',
+    'dropFirstQueries',
+  ]) {
     if (Object.hasOwn(options, key)) fake[key] = options[key];
   }
   let nextCnt = 11;
@@ -202,6 +214,17 @@ export async function startFakeRemootio(options = {}) {
       }
       conn.lastId = id;
       fake.onAction?.(type);
+      conn.queries = (conn.queries ?? 0) + 1;
+      if (conn.queries === 1) {
+        // The history first, as the Remootio replays it after a reconnection.
+        for (const event of fake.history.splice(0)) {
+          conn.sendEncrypted({ event });
+        }
+        if (fake.dropFirstQueries > 0) {
+          fake.dropFirstQueries -= 1;
+          return;
+        }
+      }
       let relayTriggered = false;
       let success = true;
       let errorCode = '';
@@ -251,6 +274,12 @@ export async function startFakeRemootio(options = {}) {
   };
 
   fake.kick = () => fake.current?.socket.destroy();
+  /** Something happened while no client was connected (replayed later). */
+  fake.offlineEvent = (event) => {
+    fake.t100ms += 1;
+    if (event.state) fake.state = event.state;
+    fake.history.push({ cnt: nextCnt++, state: fake.state, t100ms: fake.t100ms, ...event });
+  };
   fake.actions = () => fake.received.filter((r) => r.action).map((r) => r.action.type);
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

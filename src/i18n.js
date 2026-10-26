@@ -22,6 +22,21 @@ export const FEATURE_NAMES = {
 
 const seconds = (ms) => Math.max(1, Math.ceil(ms / 1000));
 
+const CLOSE_DROPPED = {
+  expired: both(
+    'the Remootio could not be reached within 2 minutes',
+    'le Remootio n’a pas pu être joint en 2 minutes',
+  ),
+  movedOffline: both(
+    'the door moved while the connection was down',
+    'la porte a bougé pendant la coupure',
+  ),
+  otherKey: both('another key operated the door', 'une autre clé a actionné la porte'),
+  relayBusy: both('the output was being driven', 'la sortie était en train d’être actionnée'),
+  commandsOff: both('commands disabled', 'commandes désactivées'),
+  tries: both('3 tries without success', '3 essais sans succès'),
+};
+
 const KEY_NAMES = {
   secret: both('API Secret Key', 'API Secret Key'),
   auth: both('API Auth Key', 'API Auth Key'),
@@ -71,8 +86,18 @@ export const T = {
     ),
   refused: (slot, address) =>
     both(
-      `Remootio ${slot} (${address}): the API keys were refused (authentication failed twice in a row). No more tries: check both keys in the Remootio app (Device software, Websocket API), save them again, or use "Check the Remootio devices".`,
-      `Remootio ${slot} (${address}) : les clés d’API ont été refusées (authentification échouée deux fois de suite). Plus aucun essai : vérifiez les deux clés dans l’application Remootio (Device software, Websocket API), enregistrez-les à nouveau, ou utilisez « Vérifier les Remootio ».`,
+      `Remootio ${slot} (${address}): the API keys were refused (twice in a row, the Remootio answered with a challenge these keys cannot open). No more tries: check both keys in the Remootio app (Device software, Websocket API) and save the right ones, or use "Check the Remootio devices".`,
+      `Remootio ${slot} (${address}) : les clés d’API ont été refusées (deux fois de suite, le Remootio a répondu par un défi que ces clés n’ouvrent pas). Plus aucun essai : vérifiez les deux clés dans l’application Remootio (Device software, Websocket API) et enregistrez les bonnes, ou utilisez « Vérifier les Remootio ».`,
+    ),
+  otherDevice: (slot, address, serial) =>
+    both(
+      `Remootio ${slot} (${address}): another Remootio (…${serial.slice(-6)}) answers at this address and these keys do not open it: check the address (a fixed IP address in your router). Tried again as usual.`,
+      `Remootio ${slot} (${address}) : un autre Remootio (…${serial.slice(-6)}) répond à cette adresse et ces clés ne l’ouvrent pas : vérifiez l’adresse (une adresse IP fixe dans votre box). Nouvel essai comme d’habitude.`,
+    ),
+  closeDropped: (name, why) =>
+    both(
+      `${name}: the kept close did not leave (${(CLOSE_DROPPED[why] ?? CLOSE_DROPPED.expired).en}).`,
+      `${name} : la fermeture gardée n’est pas partie (${(CLOSE_DROPPED[why] ?? CLOSE_DROPPED.expired).fr}).`,
     ),
   replaced: (slot, previous, next) =>
     both(
@@ -84,10 +109,15 @@ export const T = {
     'Commandes désactivées (« Autoriser l’ouverture et la fermeture ») : les portes sont seulement lues, Ouvrir et Fermer sont refusés.',
   ),
   notReached: (name, expected) =>
-    both(
-      `${name}: not read ${expected === 'open' ? 'open' : 'closed'} after the last command (an obstacle, the remote, or a longer travel time than configured).`,
-      `${name} : pas lu ${expected === 'open' ? 'ouvert' : 'fermé'} après la dernière commande (un obstacle, la télécommande, ou une course plus longue que celle configurée).`,
-    ),
+    expected === 'unread'
+      ? both(
+          `${name}: state not read after the last command (no connection): check the gate or door.`,
+          `${name} : état non relu après la dernière commande (pas de connexion) : vérifiez le portail ou la porte.`,
+        )
+      : both(
+          `${name}: not read ${expected === 'open' ? 'open' : 'closed'} after the last command (an obstacle, the remote, or a longer travel time than configured).`,
+          `${name} : pas lu ${expected === 'open' ? 'ouvert' : 'fermé'} après la dernière commande (un obstacle, la télécommande, ou une course plus longue que celle configurée).`,
+        ),
   reasons: {
     connect: both('no connection', 'pas de connexion'),
     timeout: both('no answer in time', 'pas de réponse à temps'),
@@ -96,12 +126,9 @@ export const T = {
       'pas de numéro de série dans sa réponse : logiciel du Remootio antérieur à 2.21 ? Mettez-le à jour dans l’application',
     ),
     auth: both('authentication refused', 'authentification refusée'),
-    authClosed: both(
-      'connection closed during the authentication',
-      'connexion fermée pendant l’authentification',
-    ),
     protocol: both('frame not understood', 'trame non comprise'),
     closed: both('connection lost', 'connexion perdue'),
+    otherDevice: both('another Remootio at this address', 'un autre Remootio à cette adresse'),
     device: both('error frame', 'trame d’erreur'),
     notSent: both('connection closed', 'connexion fermée'),
   },
@@ -169,13 +196,14 @@ export const ERRORS = {
     'This Remootio has no status sensor: it refuses Open and Close (a blind pulse could do the opposite), nothing moved.',
     'Ce Remootio n’a pas de capteur d’état : il refuse Ouvrir et Fermer (une impulsion à l’aveugle pourrait faire l’inverse), rien n’a bougé.',
   ),
-  relayBusy: both(
-    'The output of the Remootio is busy (it is being triggered): nothing moved.',
-    'La sortie du Remootio est occupée (elle est en train d’être déclenchée) : rien n’a bougé.',
-  ),
-  relayBusyKept: both(
-    'The output of the Remootio is busy (it is being triggered): nothing moved. The close is kept and sent again in a few seconds (within 2 minutes, 3 tries at most).',
-    'La sortie du Remootio est occupée (elle est en train d’être déclenchée) : rien n’a bougé. La fermeture est gardée et renvoyée dans quelques secondes (dans les 2 minutes, 3 essais au plus).',
+  relayBusy: (waitMs) =>
+    both(
+      `The output of the Remootio is being driven right now (another key, or its manual button): the gate or door is about to move, nothing was sent. Try again after the travel (${seconds(waitMs)} s).`,
+      `La sortie du Remootio est en train d’être actionnée (une autre clé, ou son bouton manuel) : le portail ou la porte va bouger, rien n’a été envoyé. Réessayez après la course (${seconds(waitMs)} s).`,
+    ),
+  configNotLoaded: both(
+    'The configuration is not loaded yet (asked again to Gladys): nothing sent.',
+    'La configuration n’est pas encore chargée (redemandée à Gladys) : rien n’a été envoyé.',
   ),
   refused: (code) =>
     both(

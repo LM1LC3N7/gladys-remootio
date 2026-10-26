@@ -2,8 +2,8 @@
 // One connection to a Remootio (its Websocket API allows one at a time):
 //
 //   open():  WebSocket, HELLO -> SERVER_HELLO (serial number, API version:
-//            the identity, checked against the one expected BEFORE anything
-//            else is sent), AUTH -> challenge (decrypted with the API Secret
+//            the identity, compared with the one expected: `otherDevice`
+//            tells the caller another Remootio answers), AUTH -> challenge (decrypted with the API Secret
 //            Key, MAC with the API Auth Key) -> session key and initial action
 //            id, then a QUERY whose answer proves the session (and gives the
 //            door state and the device uptime);
@@ -44,10 +44,12 @@ export const SESSION_LIMITS = {
 
 /**
  * kind: 'connect' (no WebSocket), 'timeout' (a step not answered in time),
- * 'identity' (another Remootio, or no serial number), 'auth' (the keys:
- * challenge MAC or padding refused, "authentication error"), 'authClosed'
- * (closed after AUTH without an answer), 'protocol' (a frame not understood),
- * 'closed' (the connection ended), 'device' (an ERROR frame), 'notSent'.
+ * 'identity' (no serial number), 'auth' (the keys: the challenge's MAC,
+ * padding or JSON refused, or "authentication error" answering the first
+ * QUERY; the only kind that says anything of the keys), 'protocol' (a frame
+ * not understood), 'closed' (the connection ended, during the
+ * authentication too: a closed or slow link says nothing of the keys),
+ * 'device' (an ERROR frame), 'notSent'.
  * `sent`: the frame of an action may have reached the Remootio.
  */
 export class SessionError extends Error {
@@ -130,8 +132,7 @@ export class RemootioSession {
         }
       };
       const timer = this.timers.setTimeout(
-        () =>
-          finish(new SessionError(this.phase === 'auth' ? 'authClosed' : 'timeout', this.phase)),
+        () => finish(new SessionError('timeout', this.phase)),
         timeout,
       );
       this.failOpen = (err) => finish(err);
@@ -154,9 +155,11 @@ export class RemootioSession {
             if (!frame.serial) {
               throw new SessionError('identity', 'no serial number');
             }
-            if (this.expectSerial && frame.serial !== this.expectSerial) {
-              throw new SessionError('identity', `${frame.serial} answers`);
-            }
+            // Another Remootio than the one of this slot: AUTH still goes (it
+            // reveals nothing of the keys; their success is the proof of a
+            // replaced device), but a refused challenge then says "another
+            // device", never "refused keys".
+            this.otherDevice = Boolean(this.expectSerial && frame.serial !== this.expectSerial);
             this.identity = frame;
             this.phase = 'auth';
             this.waiter = (challengeFrame) => this.onChallenge(challengeFrame, finish);
@@ -171,16 +174,18 @@ export class RemootioSession {
   }
 
   write(object) {
-    return this.ws?.sendText(JSON.stringify(object)) ?? false;
+    const written = this.ws?.sendText(JSON.stringify(object)) ?? false;
+    if (written) {
+      this.lastSentAt = this.monotonic();
+    }
+    return written;
   }
 
   /** The challenge (step 2), then the QUERY that ends the authentication (step 3). */
   onChallenge(frame, finish) {
     if (frame.kind === 'error') {
-      throw new SessionError(
-        frame.message === 'authentication error' ? 'auth' : 'device',
-        frame.message,
-      );
+      // Before the challenge nothing of the keys was used: not a refusal.
+      throw new SessionError('device', frame.message);
     }
     if (frame.kind !== 'encrypted') {
       throw new SessionError('protocol', 'no challenge');
@@ -336,6 +341,8 @@ export class RemootioSession {
       const timer = this.timers.setTimeout(() => {
         this.pending.delete(id);
         reject(new SessionError('timeout', `${type} not answered`, { sent: true }));
+        // An action without an answer: the connection is not trusted any more.
+        this.close('no answer', undefined, { abort: true });
       }, timeout);
       this.pending.set(id, { type, resolve, reject, timer });
       this.lastActionId = id;
@@ -401,7 +408,7 @@ export class RemootioSession {
   onSocketClosed(reason) {
     if (this.phase !== 'ready' && this.phase !== 'closed' && this.failOpen) {
       // After AUTH, a connection closed without an answer may be a refusal.
-      this.failOpen(new SessionError(this.phase === 'auth' ? 'authClosed' : 'connect', reason));
+      this.failOpen(new SessionError(this.phase === 'connecting' ? 'connect' : 'closed', reason));
       return;
     }
     this.close('closed');

@@ -34,16 +34,23 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (RemootioApp)
   silent minute. The history replayed at each connection is ignored.
 - **Commands.** Only the `OPEN` and `CLOSE` actions, never `TRIGGER`: the
   Remootio pulses only when its own sensor reads the door closed / open. The
-  pulse is a toggle, so BOTH are off by default ("Allow opening and
-  closing"). A guard (travel time + 5 s, saved to `/data` before the frame is
-  written) refuses another pulse while the door may move; a `RelayTrigger`
-  event of another key sets it too. A close cancels an opening not sent,
-  replaces a stuck session at once, tries again every 250 ms within 3.5 s,
-  and is kept for the next session (2 min, 3 tries) when it could not leave.
-- **Keys** refused twice in a row stop the tries (a salted fingerprint of
-  the refused pair in `/data`), until other keys are saved or the "Check"
-  button succeeds. The keys are never logged, never in `/data`, a status or
-  an error.
+  pulse is a toggle and Close can still stop, reverse or open a door (moving
+  without the Remootio knowing, or a wrong sensor), so BOTH are off by
+  default ("Allow opening and closing"). A guard (travel time + 5 s, saved to
+  `/data` before the frame is written) refuses another pulse while the door
+  may move; a `RelayTrigger` of another key, the manual button or an
+  `ERR_RELAY_BUSY` answer set it too (nothing is sent again). Before a pulse
+  the session is checked by a PING when silent for 2 s; an action without an
+  answer closes it. A close cancels an opening not sent, tries again every
+  250 ms within 3.5 s, and is kept for 2 minutes when it could not leave
+  (reconnection every 5 s meanwhile), unless the history replayed at the
+  reconnection shows that the door moved.
+- **Keys** refused twice in a row (a challenge these keys cannot open; a slow
+  or closed link never counts) stop the tries (a salted fingerprint of the
+  address and the refused pair in `/data`), until other keys or another
+  address are saved or the "Check" button succeeds. Another Remootio at the
+  address (serial number of `SERVER_HELLO`) is said as such, never as refused
+  keys. The keys are never logged, never in `/data`, a status or an error.
 - **No dependency** besides the Gladys SDK: the WebSocket client and the
   cryptography use `node:net` and `node:crypto`.
 

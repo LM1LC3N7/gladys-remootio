@@ -64,19 +64,24 @@ test/                             node --test, the SDK's fake Gladys and a fake 
 - **Safety.** The door is never a `switch` nor a commandable `binary`. Only
   the `OPEN` and `CLOSE` actions are sent (the Remootio checks its own sensor),
   never `TRIGGER` nor `RESTART`. The output is a toggle: BOTH commands need
-  `allow_open` (off by default; decision of 2026-10-25), checked on arrival,
-  before the session is used and in `beforeSend`. A guard (travel time + 5 s,
-  saved to /data before the first byte) follows every pulse, ours or another
-  key's (`RelayTrigger`); a close guard is lifted early by a fresh "closed"
-  only. The history replayed at a new session never changes a state or a
-  guard. Keep the tests that say so.
+  `allow_open` (off by default; decision of 2026-10-25, a separate close
+  option awaits Louis), checked on arrival, before the session is used and in
+  `beforeSend`. A guard (travel time + 5 s, saved to /data before the first
+  byte) follows every pulse: ours, another key's `RelayTrigger`, the manual
+  button, an `ERR_RELAY_BUSY` answer (never sent again); a close guard is
+  lifted early by a fresh "closed" only. The history replayed at a new
+  session never changes a state or a guard, but drops a kept close when it
+  shows the door moved. Keep the tests that say so.
 - **The API keys** are never logged, never in a status, an error or `/data`
   (only a salted fingerprint of a REFUSED pair). A `secret` field is kept by
   Gladys in its database, never shown again: never write that it is
   encrypted. An invalid key is never shown back (its length only).
 - **Sessions**: one per Remootio, its identity read at every session; a
   session of an older configuration publishes nothing. Keys refused twice in
-  a row: no more tries until other keys or a successful "Check".
+  a row (only a challenge the keys cannot open: never a slow or closed link,
+  never another Remootio at the address): no more tries until other keys,
+  another address or a successful "Check". A command's tries never lengthen
+  the backoff; a kept close makes it 5 s.
 - **Clocks**: guards, pauses and liveness on the monotonic clock, read once
   per decision; the wall clock only for /data.
 - **The container rootfs is read-only.** Write only under `/data`.

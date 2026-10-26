@@ -106,8 +106,10 @@ export class RemootioApp {
     this.commands = new Map();
     /** serial -> handles of the reads after its last pulse */
     this.followUps = new Map();
-    /** Timers of the kept closes tried again after a busy output. */
-    this.retries = new Set();
+    /** serial -> the end of its kept close */
+    this.closeTimers = new Map();
+    /** serial -> why its kept close did not leave (said in the status) */
+    this.droppedCloses = new Map();
     /** serial -> the state a command aimed at, not read at the end of the travel */
     this.notReached = new Map();
     /** serial -> reachable */
@@ -219,10 +221,10 @@ export class RemootioApp {
       }
     }
     this.followUps.clear();
-    for (const handle of this.retries) {
+    for (const handle of this.closeTimers.values()) {
       this.timers.clearTimeout(handle);
     }
-    this.retries.clear();
+    this.closeTimers.clear();
     if (this.persistTimer) {
       this.timers.clearTimeout(this.persistTimer);
       this.persistTimer = undefined;
@@ -267,9 +269,15 @@ export class RemootioApp {
     return Object.values(this.data?.devices ?? {});
   }
 
-  /** A salted fingerprint of a pair of keys, only ever kept for keys a Remootio refused. */
+  /**
+   * A salted fingerprint of an address and a pair of keys, only ever kept for
+   * keys a Remootio refused: another address (the right one typed again) is
+   * tried at once.
+   */
   fingerprint(conf) {
     return createHmac('sha256', this.data.salt)
+      .update(conf.address ?? '')
+      .update('|')
       .update(conf.secretKey)
       .update(':')
       .update(conf.authKey)
@@ -291,13 +299,31 @@ export class RemootioApp {
     }, delay);
   }
 
-  scheduleReconnect(link) {
+  /**
+   * The next try after a failure. The attempts of a command never lengthen
+   * the backoff (`bump` false), and while a kept close waits for this
+   * Remootio the next try is 5 s away: the close must leave within its
+   * lifetime.
+   */
+  scheduleReconnect(link, { bump = true } = {}) {
     if (link.refused || !link.conf.usable || this.stopped) {
       return;
     }
+    const serial = this.serialOfSlot(link.slot);
+    if (serial && this.data.pendingCloses[serial]) {
+      this.later(link, TIMINGS.reconnect[0]);
+      return;
+    }
     const delay = TIMINGS.reconnect[Math.min(link.failures, TIMINGS.reconnect.length - 1)];
-    link.failures += 1;
+    if (bump) {
+      link.failures += 1;
+    }
     this.later(link, delay);
+  }
+
+  /** The serial number bound to a slot (the Remootio its keys opened last). */
+  serialOfSlot(slot) {
+    return this.records.find((record) => record.slot === slot)?.serial;
   }
 
   /** The time of the attempt, in /data at most once a minute. */
@@ -311,7 +337,7 @@ export class RemootioApp {
   }
 
   /** Opens the session of a link; one opening at a time, shared. */
-  connect(link, timeout = TIMINGS.connectTimeout) {
+  connect(link, timeout = TIMINGS.connectTimeout, { command = false } = {}) {
     if (link.opening) {
       return link.opening;
     }
@@ -326,6 +352,7 @@ export class RemootioApp {
       port: conf.port,
       secretKey: conf.secretKey,
       authKey: conf.authKey,
+      expectSerial: this.serialOfSlot(link.slot),
       timers: this.timers,
       monotonic: this.monotonic,
       logger: this.logger,
@@ -345,7 +372,7 @@ export class RemootioApp {
       },
       (err) => {
         if (link.generation === generation && link.session === session) {
-          this.onConnectFailed(link, err);
+          this.onConnectFailed(link, err, session, { command });
         }
         throw err;
       },
@@ -364,6 +391,7 @@ export class RemootioApp {
     link.failures = 0;
     link.authFailures = 0;
     link.lastError = undefined;
+    link.otherSerial = undefined;
     link.nextAt = undefined;
     link.baseT100 = response.t100ms;
     link.lastRefreshAt = this.monotonic();
@@ -425,19 +453,27 @@ export class RemootioApp {
     return changed;
   }
 
-  onConnectFailed(link, err) {
+  onConnectFailed(link, err, session, { command = false } = {}) {
     link.state = 'down';
     link.session = undefined;
     link.lastError = err.kind ?? 'connect';
     this.logger.debug(`Remootio ${link.slot}: connection failed (${err.message})`);
-    if (err.kind === 'auth' || err.kind === 'authClosed') {
+    if (err.kind === 'auth' && session?.otherDevice) {
+      // Another Remootio answers at this address: its challenge cannot fit
+      // these keys, and that says nothing of them.
+      link.lastError = 'otherDevice';
+      link.otherSerial = session.identity?.serial;
+    } else if (err.kind === 'auth') {
+      // Only a challenge these keys cannot open (MAC, padding, JSON) or an
+      // "authentication error" answering the first QUERY: a closed or slow
+      // link never counts.
       link.authFailures += 1;
       if (link.authFailures >= TIMINGS.authFailures) {
         this.refuseKeys(link);
         return;
       }
     }
-    this.scheduleReconnect(link);
+    this.scheduleReconnect(link, { bump: !command });
     this.updateStatus();
   }
 
@@ -469,7 +505,13 @@ export class RemootioApp {
       this.setReachable(serial, false);
     }
     this.logger.info(`Remootio ${link.slot}: session closed (${reason})`);
-    this.scheduleReconnect(link);
+    if (reason === 'no answer' && link.failures === 0) {
+      // An action left without an answer: a new session at once (once).
+      link.failures = 1;
+      this.later(link, 0);
+    } else {
+      this.scheduleReconnect(link);
+    }
     this.updateStatus();
   }
 
@@ -493,10 +535,11 @@ export class RemootioApp {
       check = this.query(link, session, TIMINGS.pingTimeout).then(() =>
         this.resumePendingClose(link),
       );
-    } else if (mono - (session.lastByteAt ?? -Infinity) >= TIMINGS.pingInterval - 1000) {
-      check = session.ping(TIMINGS.pingTimeout);
     } else {
-      check = Promise.resolve();
+      // Every minute, whatever was received: the Remootio closes a session
+      // whose client sends nothing for 120 s (the documentation asks for a
+      // PING every 60 to 90 s).
+      check = session.ping(TIMINGS.pingTimeout);
     }
     check.then(
       () => {
@@ -521,19 +564,42 @@ export class RemootioApp {
     if (link.session !== session || !session.identity) {
       return;
     }
-    // The history the Remootio replays at each connection: never a fresh state.
-    if (replayWindow || (link.baseT100 !== undefined && event.t100ms <= link.baseT100)) {
-      this.logger.debug(`Remootio ${link.slot}: past event ${event.type} ignored`);
-      return;
+    // A counter that does not move forward: a frame replayed within the session.
+    if (event.cnt !== undefined) {
+      if (session.lastCnt !== undefined && event.cnt <= session.lastCnt) {
+        this.logger.debug(`Remootio ${link.slot}: event ${event.cnt} replayed, ignored`);
+        return;
+      }
+      session.lastCnt = event.cnt;
     }
     const serial = session.identity.serial;
+    const pulse =
+      (event.type === EVENT.RELAY_TRIGGER && event.keyType !== 'api key') ||
+      event.type === EVENT.MANUAL_BUTTON;
+    const moved = pulse || event.type === EVENT.STATE_CHANGE;
+    // The history the Remootio replays at each connection: never a fresh
+    // state nor a guard (a pulse in the same 100 ms as the first answer is
+    // taken as fresh: one guard too many is harmless). It tells what happened
+    // while the session was down: a kept close no longer goes.
+    const base = link.baseT100;
+    const history =
+      replayWindow ||
+      (base !== undefined && (event.t100ms < base || (event.t100ms === base && !pulse)));
+    if (history) {
+      this.logger.debug(`Remootio ${link.slot}: past event ${event.type} ignored`);
+      if (moved && session.identity.serial === this.serialOfSlot(link.slot)) {
+        this.dropPendingClose(serial, 'movedOffline');
+      }
+      return;
+    }
     switch (event.type) {
       case EVENT.STATE_CHANGE:
       case EVENT.LEFT_OPEN:
         this.fresh(serial, event.state, event.t100ms);
         return;
       case EVENT.RELAY_TRIGGER:
-        if (event.keyType !== 'api key') {
+      case EVENT.MANUAL_BUTTON:
+        if (pulse) {
           this.externalPulse(serial, event);
         }
         return;
@@ -557,7 +623,7 @@ export class RemootioApp {
       this.removeGuard(serial, guard);
     }
     const expected = this.notReached.get(serial);
-    if (expected && state === expected) {
+    if (expected && (state === expected || (expected === 'unread' && state !== undefined))) {
       this.notReached.delete(serial);
       this.updateStatus();
     }
@@ -579,7 +645,7 @@ export class RemootioApp {
     this.logger.info(`Remootio ${serial}: operated by a ${event.keyType || 'key'}`);
     this.setGuard(serial, kind, { t100: event.t100ms });
     this.save();
-    this.dropPendingClose(serial, 'another key operated the door');
+    this.dropPendingClose(serial, 'otherKey');
   }
 
   // --- Guards ----------------------------------------------------------------
@@ -645,19 +711,56 @@ export class RemootioApp {
 
   keepPendingClose(serial) {
     const previous = this.data.pendingCloses[serial];
-    this.data.pendingCloses[serial] = {
-      at: previous?.at ?? this.now(),
-      tries: previous?.tries ?? 0,
-    };
+    const kept = { at: previous?.at ?? this.now(), tries: previous?.tries ?? 0 };
+    this.data.pendingCloses[serial] = kept;
     this.save();
+    this.droppedCloses.delete(serial);
+    // Its end: a close still kept then is dropped, and the status says so.
+    this.timers.clearTimeout(this.closeTimers.get(serial));
+    this.closeTimers.set(
+      serial,
+      this.timers.setTimeout(
+        () => {
+          this.closeTimers.delete(serial);
+          this.expirePendingClose(serial);
+        },
+        Math.max(0, kept.at + TIMINGS.pendingCloseFor - this.now()),
+      ),
+    );
+    // The next try of its Remootio within 5 s.
+    const slot = this.data.devices[serial]?.slot;
+    const link = slot === undefined ? undefined : this.links.get(slot);
+    if (link && link.state === 'down' && !link.opening) {
+      this.scheduleReconnect(link);
+    }
   }
 
-  dropPendingClose(serial, why) {
-    if (this.data.pendingCloses[serial]) {
-      delete this.data.pendingCloses[serial];
-      this.logger.info(`Remootio ${serial}: kept close dropped (${why})`);
-      this.save();
+  expirePendingClose(serial) {
+    const pending = this.data.pendingCloses[serial];
+    if (pending && this.now() - pending.at >= TIMINGS.pendingCloseFor - 1000) {
+      this.dropPendingClose(serial, 'expired');
     }
+  }
+
+  /**
+   * A kept close leaves the list. Sent (or no longer needed): silently;
+   * otherwise a warning and a status line until the next command.
+   */
+  dropPendingClose(serial, why) {
+    if (!this.data.pendingCloses[serial]) {
+      return;
+    }
+    delete this.data.pendingCloses[serial];
+    this.timers.clearTimeout(this.closeTimers.get(serial));
+    this.closeTimers.delete(serial);
+    this.save();
+    if (['sent', 'alreadyClosed', 'newerCommand'].includes(why)) {
+      this.logger.info(`Remootio ${serial}: kept close done (${why})`);
+      return;
+    }
+    this.logger.warn(`Remootio ${serial}: kept close dropped (${why})`);
+    this.droppedCloses.set(serial, why);
+    this.updateStatus();
   }
 
   /** At a new session or a refresh: the close not written yet is sent now. */
@@ -668,16 +771,16 @@ export class RemootioApp {
       return;
     }
     const at = this.now();
-    if (
-      at - pending.at >= TIMINGS.pendingCloseFor ||
-      at < pending.at ||
-      pending.tries >= TIMINGS.pendingCloseTries
-    ) {
+    if (at - pending.at >= TIMINGS.pendingCloseFor || at < pending.at) {
       this.dropPendingClose(serial, 'expired');
       return;
     }
+    if (pending.tries >= TIMINGS.pendingCloseTries) {
+      this.dropPendingClose(serial, 'tries');
+      return;
+    }
     if (!this.config.allowOpen) {
-      this.dropPendingClose(serial, 'commands disabled');
+      this.dropPendingClose(serial, 'commandsOff');
       return;
     }
     if (this.commands.has(serial) || this.activeGuard(serial, this.monotonic())) {
@@ -844,6 +947,8 @@ export class RemootioApp {
       parts.push(T.refused(conf.slot, conf.address));
     } else if (link.state === 'ready' && link.session?.identity) {
       parts.push(T.connected(conf.slot, conf.address, link.session.identity.serial));
+    } else if (link.state === 'down' && link.lastError === 'otherDevice') {
+      parts.push(T.otherDevice(conf.slot, conf.address, link.otherSerial ?? '?'));
     } else if (link.state === 'down' && link.nextAt !== undefined) {
       parts.push(
         T.down(
@@ -880,6 +985,9 @@ export class RemootioApp {
     }
     for (const [serial, expected] of this.notReached) {
       parts.push(T.notReached(`Remootio ${serial.slice(-6)}`, expected));
+    }
+    for (const [serial, why] of this.droppedCloses) {
+      parts.push(T.closeDropped(`Remootio ${serial.slice(-6)}`, why));
     }
     const connected = links.some((link) => link.state === 'ready');
     const message = join(parts);
@@ -941,7 +1049,10 @@ export class RemootioApp {
   async setValue(_device, feature, value) {
     // The deadlines count from the arrival of the command, before any wait.
     const received = this.monotonic();
-    const target = this.data && this.config && this.features.get(feature?.external_id);
+    if (!this.data || !this.config) {
+      throw this.refusal(ERRORS.configNotLoaded);
+    }
+    const target = this.features.get(feature?.external_id);
     if (!target || !this.data.devices[target.serial]) {
       throw this.refusal(ERRORS.unknownDevice);
     }
@@ -1008,6 +1119,10 @@ export class RemootioApp {
 
   async command(serial, key, received) {
     const isClose = key === 'close';
+    if (this.droppedCloses.delete(serial)) {
+      // A new click: the note of the kept close that did not leave is read.
+      this.updateStatus();
+    }
     this.checkOption(key);
     // Refused at once when this Remootio cannot be commanded at all.
     this.linkOf(serial);
@@ -1092,7 +1207,7 @@ export class RemootioApp {
         break;
       } catch (err) {
         if (err.refusal) throw err;
-        lastReason = reasonOf(err);
+        lastReason = link.lastError === 'otherDevice' ? T.reasons.otherDevice : reasonOf(err);
         check(this.monotonic());
         const mono = this.monotonic();
         if (!isClose || mono + TIMINGS.closeRetry > sendBy - 200) {
@@ -1166,34 +1281,35 @@ export class RemootioApp {
     this.fresh(serial, response.state, response.t100ms);
     if (response.success && response.relayTriggered) {
       // Moving: a newer command that left cancels a kept close; a close that left ends it.
-      this.dropPendingClose(serial, isClose ? 'sent' : 'a newer command was sent');
+      this.dropPendingClose(serial, isClose ? 'sent' : 'newerCommand');
       this.followUp(link, serial, isClose ? STATE.CLOSED : STATE.OPEN);
       return;
+    }
+    if (response.errorCode === 'ERR_RELAY_BUSY') {
+      // The output is being driven right now (another key, the manual
+      // button): the door is about to move. A guard of its travel, nothing
+      // sent again: a pulse into a moving door would stop or reverse it.
+      this.removeGuard(serial, guard);
+      const busy = this.setGuard(serial, response.state === STATE.CLOSED ? 'open' : 'close', {
+        t100: response.t100ms,
+      });
+      this.save();
+      this.dropPendingClose(serial, 'relayBusy');
+      this.followUp(link, serial, undefined);
+      this.logger.warn(`Remootio ${serial}: ${key} refused (ERR_RELAY_BUSY)`);
+      throw this.refusal(ERRORS.relayBusy(busy.until - busy.at));
     }
     // Nothing moved: the guard of this pulse goes.
     this.removeGuard(serial, guard);
     this.save();
     if (response.success) {
       // Already where it was sent (read by the Remootio itself).
-      if (isClose) this.dropPendingClose(serial, 'already closed');
+      if (isClose) this.dropPendingClose(serial, 'alreadyClosed');
       return;
     }
     this.logger.warn(`Remootio ${serial}: ${key} refused (${response.errorCode || 'no code'})`);
     if (response.errorCode === 'ERR_NO_SENSOR') {
       throw this.refusal(ERRORS.noSensor);
-    }
-    if (response.errorCode === 'ERR_RELAY_BUSY') {
-      if (isClose) {
-        this.keepPendingClose(serial);
-        // The output is busy for a moment: tried again soon on this session.
-        const handle = this.timers.setTimeout(() => {
-          this.retries.delete(handle);
-          this.resumePendingClose(link);
-        }, TIMINGS.busyRetry);
-        this.retries.add(handle);
-        throw this.refusal(ERRORS.relayBusyKept);
-      }
-      throw this.refusal(ERRORS.relayBusy);
     }
     throw this.refusal(ERRORS.refused(response.errorCode || '?'));
   }
@@ -1247,7 +1363,7 @@ export class RemootioApp {
       if (left <= 0) {
         throw Object.assign(new Error('no time left'), { kind: 'timeout' });
       }
-      this.connect(link, left).catch(() => {});
+      this.connect(link, left, { command: true }).catch(() => {});
     }
     const opening = link.opening;
     if (!opening) {
@@ -1284,19 +1400,34 @@ export class RemootioApp {
     const delays = [...TIMINGS.followUps.filter((d) => d < last), last];
     const handles = delays.map((delay) =>
       this.timers.setTimeout(() => {
+        if (this.stopped) {
+          return;
+        }
+        // The end of the travel not read: said in the status, never silent.
+        const unread = () => {
+          if (delay === last) {
+            this.notReached.set(serial, 'unread');
+            this.logger.warn(`Remootio ${serial}: state not read after the command`);
+            this.updateStatus();
+          }
+        };
         const session = link.session;
-        if (!session?.ready || session.identity?.serial !== serial || this.stopped) {
+        if (!session?.ready || session.identity?.serial !== serial) {
+          unread();
           return;
         }
         this.query(link, session, TIMINGS.pingTimeout).then(
           (response) => {
-            if (delay === last && response.state !== expected) {
+            if (delay === last && expected && response.state !== expected) {
               this.notReached.set(serial, expected);
               this.logger.warn(`Remootio ${serial}: not read ${expected} after the command`);
               this.updateStatus();
             }
           },
-          () => this.logger.debug(`Remootio ${serial}: read after a command failed`),
+          () => {
+            this.logger.debug(`Remootio ${serial}: read after a command failed`);
+            unread();
+          },
         );
       }, delay),
     );

@@ -25,6 +25,8 @@ export const EVENT = Object.freeze({
   STATE_CHANGE: 'StateChange',
   RELAY_TRIGGER: 'RelayTrigger',
   LEFT_OPEN: 'LeftOpen',
+  /** The manual button of the Remootio: taken as a pulse of another key. */
+  MANUAL_BUTTON: 'ManualButtonPushed',
   RESTART: 'Restart',
 });
 

@@ -20,7 +20,10 @@ the notes of the version's GitHub Release.
 - Open and Close buttons (never a switch), both off by default: only the OPEN
   and CLOSE actions of the API (the Remootio checks its own sensor), a guard
   of the travel time after each pulse (also after a pulse of another key),
-  saved before the pulse leaves; a close not sent in time is kept for the
-  next connection (2 minutes, 3 tries at most).
-- Keys refused twice in a row stop the connection attempts until other keys
-  are saved or "Check the Remootio devices" succeeds.
+  saved before the pulse leaves (also after an "output busy" answer, never
+  sent again); a close not sent in time is kept for the next connection
+  (2 minutes, 3 tries at most, dropped when the door moved meanwhile).
+- Keys refused twice in a row (a challenge the keys cannot open) stop the
+  connection attempts until other keys or another address are saved, or
+  "Check the Remootio devices" succeeds; another Remootio at the address is
+  said as such.

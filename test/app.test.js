@@ -132,20 +132,26 @@ test('no status sensor: Open and Close refused by the Remootio, nothing moved', 
   assert.equal(gladys.fake.lastState(F('door')), undefined, 'no state published without a sensor');
 });
 
-test('a busy output: the close is kept and sent again a few seconds later', async (t) => {
-  const { gladys, fake, ready, advance } = await setup(t, {
+test('a busy output (another key drives it): a guard of the travel, nothing sent again', async (t) => {
+  const { gladys, app, fake, ready, advance, store } = await setup(t, {
     fake: await startFakeRemootio({ state: 'open' }),
   });
   await ready();
   await createAll(gladys);
   fake.relay = 'busy';
   const ack = await press(gladys, 'close');
-  assert.match(ack.error, /sortie du Remootio est occupée/);
-  assert.match(ack.error, /renvoyée dans quelques secondes/);
+  assert.match(ack.error, /en train d’être actionnée.*va bouger, rien n’a été envoyé/);
+  assert.equal(app.guards.get(SERIAL)?.kind, 'close', 'the door is about to close');
+  await advance(1000);
+  assert.equal(store.data.guards[SERIAL]?.kind, 'close');
+  assert.equal(store.data.pendingCloses[SERIAL], undefined, 'never kept');
   fake.relay = 'ok';
-  await advance(3000);
-  await until(() => fake.pulses.length === 1);
-  assert.equal(fake.pulses[0].type, 'CLOSE');
+  for (let i = 0; i < 10; i += 1) {
+    await advance(1000);
+    await tick();
+  }
+  assert.equal(fake.pulses.length, 0, 'no pulse into the moving door');
+  assert.match((await press(gladys, 'close')).error, /vient d’être actionné/);
 });
 
 test('a value other than 1, a read-only feature: refused', async (t) => {
@@ -402,20 +408,20 @@ test('a door not read where it was sent at the end of the travel is said in the 
   await until(() => !/pas lu fermé/.test(statusFr(gladys)));
 });
 
-test('liveness: a PING after a silent minute; no PONG closes the session, reopened 5 s later', async (t) => {
+test('liveness: a PING every minute; no PONG closes the session and a new one opens', async (t) => {
   const { app, fake, ready, advance } = await setup(t);
   await ready();
   await advance(60_000);
   await until(() => fake.received.at(-1)?.type === 'PING');
+  await until(() => app.links.get(1).timer !== undefined);
   fake.silent = true;
   await advance(60_000);
   await until(() => fake.received.filter((r) => r.type === 'PING').length === 2);
   await advance(10_000);
-  await until(() => app.links.get(1).state === 'down');
+  await until(() => fake.connections === 2, 2000);
   fake.silent = false;
-  await advance(5000);
-  await until(() => app.links.get(1).state === 'ready');
-  assert.equal(fake.connections, 2);
+  fake.kick();
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 1000 });
 });
 
 test('the QUERY of every 5 minutes keeps the state fresh', async (t) => {
@@ -461,4 +467,235 @@ test('a configuration that cannot be read is asked again, with a status', async 
   assert.match(gladys.fake.connectionStatus.message.fr, /nouvel essai dans 5 s/);
   await handles[0].fn();
   assert.equal(started.length, 1);
+});
+
+test('B1: closed or silent links during AUTH are never "refused keys"; Close still works', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  // Another client (Home Assistant) takes the connection during AUTH, three times.
+  fake.closeAfterAuth = true;
+  fake.kick();
+  await advanceUntil(advance, () => fake.received.filter((r) => r.type === 'AUTH').length >= 4, {
+    step: 5000,
+  });
+  // Then a slow link: the first QUERY unanswered, twice.
+  fake.closeAfterAuth = false;
+  fake.dropFirstQueries = 2;
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 5000 });
+  assert.equal(app.links.get(1).refused, false);
+  assert.equal(app.data.refused['1'], undefined);
+  assert.deepEqual(await press(gladys, 'close'), { success: true });
+});
+
+test('I1: a kept close leaves when the Remootio comes back, its tries never lengthen the wait', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  // Down for a while before the click: the backoff has grown.
+  fake.silent = true;
+  fake.kick();
+  await advanceUntil(advance, () => app.links.get(1).failures >= 4, { step: 5000 });
+  const failures = app.links.get(1).failures;
+  const ack = press(gladys, 'close');
+  for (let i = 0; i < 16; i += 1) {
+    await tick();
+    await advance(250);
+  }
+  assert.match((await ack).error, /La fermeture est gardée/);
+  assert.ok(app.links.get(1).failures <= failures, 'the command did not lengthen the backoff');
+  fake.silent = false;
+  fake.kick();
+  const before = Date.now();
+  await advanceUntil(advance, () => fake.pulses.length === 1, { ms: 30_000, step: 1000 });
+  assert.ok(Date.now() - before < 5000);
+  assert.equal(fake.pulses[0].type, 'CLOSE');
+});
+
+test('I1: a kept close that cannot leave in 2 minutes is said in the status', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.silent = true;
+  fake.kick();
+  await until(() => app.links.get(1).state !== 'ready');
+  const ack = press(gladys, 'close');
+  for (let i = 0; i < 16; i += 1) {
+    await tick();
+    await advance(250);
+  }
+  await ack;
+  await advanceUntil(advance, () => app.data.pendingCloses[SERIAL] === undefined, {
+    ms: 200_000,
+    step: 5000,
+  });
+  assert.match(
+    statusFr(gladys),
+    /la fermeture gardée n’est pas partie \(le Remootio n’a pas pu être joint/,
+  );
+  assert.equal(fake.pulses.length, 0);
+});
+
+test('I2: the history replayed after the outage shows the door moved: the kept close is dropped', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.silent = true;
+  fake.kick();
+  await until(() => app.links.get(1).state !== 'ready');
+  const ack = press(gladys, 'close');
+  for (let i = 0; i < 16; i += 1) {
+    await tick();
+    await advance(250);
+  }
+  assert.match((await ack).error, /La fermeture est gardée/);
+  // Closed then opened again by the remote of the opener while the link was down.
+  fake.offlineEvent({ type: 'StateChange', state: 'closed' });
+  fake.offlineEvent({ type: 'StateChange', state: 'open' });
+  fake.silent = false;
+  fake.kick();
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 1000 });
+  await advance(1000);
+  assert.equal(fake.pulses.length, 0, 'not sent onto the car that comes in');
+  assert.equal(app.data.pendingCloses[SERIAL], undefined);
+  assert.match(statusFr(gladys), /la porte a bougé pendant la coupure/);
+  await createAll(gladys);
+  assert.equal(
+    gladys.fake.states.filter((st) => st.state === 1).length,
+    0,
+    'history never published',
+  );
+});
+
+test('I3: another Remootio at the address is not "refused keys"; a refusal belongs to an address', async (t) => {
+  const store = new MemoryStore();
+  store.data.devices.aaaaaa111111 = { serial: 'aaaaaa111111', slot: 1, address: '', model: '' };
+  // B answers at A's address; A's keys do not open B's challenge.
+  const fake = await startFakeRemootio({ auth: 'C'.repeat(64) });
+  const { gladys, app, advance } = await setup(t, { fake, store });
+  await advanceUntil(advance, () => fake.connections >= 4, { step: 5000 });
+  assert.equal(app.links.get(1).refused, false);
+  assert.match(
+    statusFr(gladys),
+    /un autre Remootio \(…cfaxm\w?\) répond à cette adresse|un autre Remootio \(…\w+\) répond à cette adresse/,
+  );
+});
+
+test('I3: refused keys at one address; the right address typed again is tried at once', async (t) => {
+  const fake = await startFakeRemootio({ auth: 'A'.repeat(64) });
+  const right = await startFakeRemootio();
+  t.after(() => right.close());
+  const { gladys, app, advance } = await setup(t, { fake });
+  await until(() => app.links.get(1).state === 'down');
+  await advance(5000);
+  await until(() => app.links.get(1).refused);
+  await gladys.fake.configUpdated({
+    host_1: right.host,
+    secret_key_1: SECRET,
+    auth_key_1: AUTH,
+    allow_open: true,
+  });
+  await advanceUntil(advance, () => app.links.get(1).state === 'ready', { step: 1000 });
+  assert.equal(right.connections, 1);
+});
+
+test('I4: a session silent for 2 s is probed before the pulse; an action unanswered closes it', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  await advance(2500);
+  fake.dropActions.add('CLOSE');
+  const ack = press(gladys, 'close');
+  await until(() => fake.pulses.length === 1);
+  const kinds = fake.received.map((r) => r.type ?? r.action.type);
+  assert.deepEqual(kinds.slice(-2), ['PING', 'CLOSE'], 'the channel checked first');
+  await advance(4300);
+  assert.match((await ack).error, /Commande envoyée, sans confirmation/);
+  await until(() => app.links.get(1).state !== 'ready' || fake.connections === 2);
+  assert.ok(fake.connections === 2 || app.links.get(1).state !== 'ready', 'not "connected"');
+});
+
+test('I4: the end of the travel not read is said in the status', async (t) => {
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.moveAfter = undefined;
+  assert.deepEqual(await press(gladys, 'close'), { success: true });
+  fake.silent = true;
+  fake.kick();
+  await until(() => app.links.get(1).state !== 'ready');
+  await advanceUntil(
+    advance,
+    () => /état non relu après la dernière commande/.test(statusFr(gladys)),
+    {
+      ms: 60_000,
+      step: 1000,
+    },
+  );
+});
+
+test('m1: a PING every minute even while events keep coming', async (t) => {
+  const { app, fake, ready, advance } = await setup(t);
+  await ready();
+  for (let i = 1; i <= 3; i += 1) {
+    await advance(55_000);
+    fake.event({ type: 'LeftOpen', state: 'open' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await advance(5000);
+    await until(() => fake.received.filter((r) => r.type === 'PING').length === i);
+    await until(() => app.links.get(1).timer !== undefined);
+  }
+});
+
+test('m2: an event replayed within the session (same counter) is ignored', async (t) => {
+  const { gladys, app, fake, ready } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.event({ type: 'StateChange', state: 'closed', cnt: 50 });
+  await until(() => app.lastValues.get(F('door'))?.state === 1);
+  fake.event({ type: 'StateChange', state: 'open', cnt: 51 });
+  await until(() => app.lastValues.get(F('door'))?.state === 0);
+  fake.event({ type: 'StateChange', state: 'closed', cnt: 50 });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(app.lastValues.get(F('door')).state, 0);
+});
+
+test('m3, m4: the manual button, and a pulse in the same 100 ms as the first answer, set a guard', async (t) => {
+  const { gladys, app, fake, ready } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'closed' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.event({ type: 'ManualButtonPushed', state: 'closed' });
+  await until(() => app.guards.get(SERIAL)?.kind === 'open');
+  app.guards.clear();
+  const base = app.links.get(1).baseT100;
+  fake.event(
+    { type: 'RelayTrigger', state: 'open', data: { keyType: 'guest key', keyNr: 2 } },
+    {
+      t100ms: base,
+    },
+  );
+  await until(() => app.guards.get(SERIAL)?.kind === 'close');
+  assert.match((await press(gladys, 'open')).error, /vient d’être actionné/);
+});
+
+test('m5: a command before the configuration is read says so', async (t) => {
+  const { gladys } = await setup(t, { start: false });
+  const ack = await press(gladys, 'close');
+  assert.match(ack.error, /configuration n’est pas encore chargée/);
 });

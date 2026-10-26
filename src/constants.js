@@ -42,10 +42,12 @@ export const TIMINGS = {
   /** A close that could not leave tries again this often within its budget. */
   closeRetry: 250,
   /**
-   * A session silent for longer is probed (PING) before a pulse; with no
-   * PONG within `probeTimeout` it is closed and a new one opened.
+   * A session silent for longer (a round trip on a LAN is far shorter) is
+   * probed (PING) before a pulse: a frame written can never be sent again,
+   * so the channel is checked first. With no PONG within `probeTimeout` it
+   * is closed and a new one opened.
    */
-  probeAfterIdle: 10_000,
+  probeAfterIdle: 2000,
   probeTimeout: 1000,
   /** Liveness: a PING when nothing was received for this long (the Remootio closes at 120 s). */
   pingInterval: 60_000,
@@ -61,8 +63,6 @@ export const TIMINGS = {
   /** A close not sent is sent again at the next session within this time, 3 times at most. */
   pendingCloseFor: 120_000,
   pendingCloseTries: 3,
-  /** A close answered "output busy" (ERR_RELAY_BUSY) is tried again after this. */
-  busyRetry: 3000,
   /** Reads after a pulse (plus one at the end of the travel time). */
   followUps: [5000, 15_000],
   /** Added to the travel time for the guard of a pulse. */

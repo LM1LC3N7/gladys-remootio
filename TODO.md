@@ -30,6 +30,7 @@ up to date at the end of every milestone.
   - whether a `RelayTrigger` of our own action comes with `keyType` "api key";
   - the PING/PONG behaviour on a session idle for a minute; how fast a
     Remootio accepts a new connection right after the old one was destroyed;
+  - whether `ManualButtonPushed` means the output was driven;
   - OPEN/CLOSE answers on a Remootio without sensor (ERR_NO_SENSOR) and while
     the output is held (ERR_RELAY_BUSY).
 - [ ] **Milestone 3 — more**: the `LeftOpen` event as a scene trigger, the
@@ -94,40 +95,75 @@ up to date at the end of every milestone.
     read back from /data. An open guard is never lifted early (the sensor
     reads open from the start of the travel); a close guard is lifted by a
     "closed" read after the pulse (`t100ms` greater than the answer's);
-  - another key's `RelayTrigger` (API with logging) sets the same guard, and
-    drops a kept close (someone chose to operate the door);
+  - another key's `RelayTrigger` (API with logging), a `ManualButtonPushed`
+    (taken as a pulse, to check on real hardware) and an ERR_RELAY_BUSY
+    answer (the output is being driven: the door is about to move) set the
+    same guard and drop a kept close; nothing is ever sent again after
+    ERR_RELAY_BUSY (review r1, B2). A pulse event in the same 100 ms as the
+    first answer of the session is taken as fresh (one guard too many is
+    harmless);
   - one command per door: a close cancels an opening not written (its waits
     end at once), waits for one written (its answer) then meets its guard;
     an opening is refused while another command runs;
-  - the session of a command: the open one if it answered in the last 10 s,
-    else a PING (1 s at most), else (or stuck: an answer awaited with no
-    byte for 1 s) the socket is destroyed and a new session opened at once.
-    A close tries again every 250 ms within its budget;
+  - the session of a command: the open one if a byte came in the last 2 s
+    (a frame written can never be sent again, so the channel is checked
+    first), else a PING (1 s at most), else (or stuck: an answer awaited with
+    no byte for 1 s) the socket is destroyed and a new session opened at
+    once. A close tries again every 250 ms within its budget; these tries
+    never lengthen the backoff of the reconnection (review r1, I1). Any action
+    left without an answer closes its session, and a new one opens at once
+    (review r1, I4);
   - deadlines: written within 3.5 s of the click or refused unsent;
     answered by 4.3 s; a frame that may have left is "sent, without
     confirmation" (guard kept, never resent);
-  - a close not written in time (or answered ERR_RELAY_BUSY) is kept in /data
-    and sent at the next session or 3 s later (busy), within 2 minutes, 3
-    tries at most, only with `allow_open`, never during a guard; dropped by an
-    open that leaves or another key's pulse. A close that the Remootio
+  - a close not written in time is kept in /data and sent at the next
+    session, the reconnection tried every 5 s meanwhile, within 2 minutes of
+    the click, 3 tries at most, only with `allow_open`, never during a guard;
+    dropped by an open that leaves, another key's pulse, ERR_RELAY_BUSY, or
+    the history replayed at the reconnection showing the door moved during
+    the outage (StateChange, RelayTrigger, ManualButtonPushed; review r1,
+    I2). A drop other than "sent" or "already closed" is said in the status
+    and logged (warn). A close that the Remootio
     confirmed (relayTriggered) is never sent again: a door still open at the
     end of its travel was stopped by its own safety (obstacle) or by someone,
     and a second pulse would fight it; it is said in the status instead;
   - success: relayTriggered (the door moves) or "already there"; reads at
     5 s, 15 s and the end of the travel time.
-- Sessions: reconnection after 5 s, 15 s, 30 s, 1, 2, then 5 min; a PING when
-  nothing came for 59 s (the Remootio closes at 120 s), a QUERY every 5 min;
-  one timer per session. Events older than (or as old as) the answer to the
-  first QUERY are history: never a state, never a guard. After a restart soon
-  after an attempt (kept in /data at most once a minute) the first connection
-  waits 5 s; a command never waits for that.
-- Keys refused: two authentication failures in a row ("auth": MAC or padding
-  of the challenge refused, an "authentication error" frame; "authClosed":
-  closed or silent after AUTH) stop the tries; a salted HMAC of the pair is
-  kept in /data (256-bit keys: no brute force), removed at the first success.
-  Other keys saved: tried at once. "Check the Remootio devices": one try,
-  at most every 30 s, the refusal lifted only by a success (one more failure
-  is a refusal again at once). A click never replays refused keys.
+- Sessions: reconnection after 5 s, 15 s, 30 s, 1, 2, then 5 min; a PING
+  every minute whatever was received (the Remootio closes a session whose
+  client sends nothing for 120 s; review r1, m1), a QUERY every 5 min; one
+  timer per session. Events older than the answer to the first QUERY (or as
+  old, except a pulse) are history: never a state, never a guard. An event
+  whose `cnt` does not grow within the session is a replay, ignored (m2).
+  After a restart soon after an attempt (kept in /data at most once a
+  minute) the first connection waits 5 s; a command never waits for that.
+  The end of the travel not read (no session, no answer) is said in the
+  status ("state not read after the last command").
+- Keys refused (review r1, B1): only "auth" counts: the challenge's MAC,
+  padding or JSON refused with these keys, or an "authentication error"
+  answering the first QUERY. The Remootio sends its challenge without
+  checking anything, so a link closed, slow or taken by another client
+  during AUTH says nothing of the keys: a plain failure with the usual
+  backoff. Two "auth" in a row stop the tries; a salted HMAC of the address
+  and the pair is kept in /data (256-bit keys: no brute force), removed at
+  the first success. Other keys or another address saved: tried at once.
+  "Check the Remootio devices": one try, at most every 30 s, the refusal
+  lifted only by a success (one more failure is a refusal again at once). A
+  click never replays refused keys. To consider: a refusal could be tried
+  again every 5 min instead (nothing derived from the keys leaves).
+- Identity (review r1, I3): the serial number bound to the slot is given to
+  the session; another serial in SERVER_HELLO still gets AUTH (it reveals
+  nothing), and if its challenge does not fit the keys the status says
+  "another Remootio answers at this address", never "refused keys", with
+  the usual reconnection; if the keys open it, the slot is rebound (a
+  replaced device).
+- Protocol limit: no client nonce in the authentication; someone recording
+  the LAN can replay a whole session. Not fixable on our side.
+- Pending decision (Louis): a separate "Allow closing" option (`allow_close`)
+  next to "Allow opening", proposed by review r1; until then Close needs
+  `allow_open`, as decided on 2026-10-25.
+- A command before the configuration is read is refused with "configuration
+  not loaded yet" (m5).
 - Bounds: a message 16 KB at most (cut before it is read whole), 200
   messages per 10 s, 8 actions awaiting an answer, a payload of 8 KB of
   base64; every field checked (own properties, types, ranges), an unknown

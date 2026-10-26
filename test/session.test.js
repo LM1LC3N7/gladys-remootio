@@ -76,9 +76,20 @@ test('a wrong API Secret Key: "auth" (the padding of the challenge)', async (t) 
   await assert.rejects(session.open({ timeout: 2000 }), (err) => err.kind === 'auth');
 });
 
-test('closed right after AUTH: "authClosed" (counted as a refusal by the app)', async (t) => {
+test('closed right after AUTH: "closed", never "auth" (the keys were not even used)', async (t) => {
   const { session } = await open(t, { closeAfterAuth: true });
-  await assert.rejects(session.open({ timeout: 2000 }), (err) => err.kind === 'authClosed');
+  await assert.rejects(session.open({ timeout: 2000 }), (err) => err.kind === 'closed');
+});
+
+test('the first QUERY not answered in time: "timeout", never "auth"', async (t) => {
+  const { session } = await open(t, { dropFirstQueries: 1 });
+  await assert.rejects(session.open({ timeout: 200 }), (err) => err.kind === 'timeout');
+});
+
+test('another serial number than expected: AUTH still goes, `otherDevice` is said', async (t) => {
+  const { session } = await open(t, {}, { expectSerial: 'aaaaaa111111' });
+  await session.open({ timeout: 2000 });
+  assert.equal(session.otherDevice, true);
 });
 
 test('no answer: "timeout"; no serial number: "identity"; nothing listening: "connect"', async (t) => {
