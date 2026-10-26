@@ -26,11 +26,12 @@
 //     Remootio itself pulses only when ITS sensor reads the door closed (OPEN)
 //     or open (CLOSE), when the action arrives; without a status sensor it
 //     refuses both (ERR_NO_SENSOR);
-//   - BOTH need "Allow opening and closing" (allow_open, off by default):
-//     "open" for the sensor also means "moving", where a close pulse stops or
-//     reverses the door (decision of 2026-10-25, as gladys-opengarage).
-//     Checked on arrival, before the session is used and right before the
-//     frame is written;
+//   - OPEN needs "Allow opening" (allow_open) and CLOSE needs "Allow closing"
+//     (allow_close), both off by default and independent (decision of
+//     2026-10-26): "open" for the sensor also means "moving", where a close
+//     pulse stops or reverses the door. Checked on arrival, before the
+//     session is used and right before the frame is written (a kept close
+//     checks it again when it leaves);
 //   - after a pulse (ours, or any key's RelayTrigger event when the API runs
 //     with logging), a guard refuses any other pulse for the travel time + 5 s
 //     (a door reads "open" as soon as it leaves the closed position); a close
@@ -812,8 +813,8 @@ export class RemootioApp {
       this.dropPendingClose(serial, 'tries');
       return;
     }
-    if (!this.config.allowOpen) {
-      this.dropPendingClose(serial, 'commandsOff');
+    if (!this.config.allowClose) {
+      this.dropPendingClose(serial, 'closeOff');
       return;
     }
     if (this.commands.has(serial) || this.activeGuard(serial, this.monotonic())) {
@@ -1013,8 +1014,15 @@ export class RemootioApp {
     for (const link of links) {
       parts.push(...this.linkStatus(link, mono));
     }
-    if (links.length > 0 && !this.config.allowOpen) {
-      parts.push(T.commandsOff);
+    if (links.length > 0) {
+      const { allowOpen, allowClose } = this.config;
+      if (!allowOpen && !allowClose) {
+        parts.push(T.commandsOff);
+      } else if (!allowOpen) {
+        parts.push(T.openOff);
+      } else if (!allowClose) {
+        parts.push(T.closeOff);
+      }
     }
     for (const [serial, expected] of this.notReached) {
       parts.push(T.notReached(`Remootio ${serial.slice(-6)}`, expected));
@@ -1115,8 +1123,9 @@ export class RemootioApp {
   }
 
   checkOption(key) {
-    if (!this.config.allowOpen) {
-      // Closing is the same pulse as opening on a moving door: both need the permission.
+    // Closing has its own option (decision of 2026-10-26): it never needs
+    // "Allow opening". Read again at every check, right before the frame.
+    if (key === 'open' ? !this.config.allowOpen : !this.config.allowClose) {
       throw this.refusal(key === 'open' ? ERRORS.openDisabled : ERRORS.closeDisabled);
     }
   }

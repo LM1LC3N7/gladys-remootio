@@ -63,10 +63,11 @@ test/                             node --test, the SDK's fake Gladys and a fake 
   created device never loses a feature.
 - **Safety.** The door is never a `switch` nor a commandable `binary`. Only
   the `OPEN` and `CLOSE` actions are sent (the Remootio checks its own sensor),
-  never `TRIGGER` nor `RESTART`. The output is a toggle: BOTH commands need
-  `allow_open` (off by default; decision of 2026-10-25, a separate close
-  option awaits Louis), checked on arrival, before the session is used and in
-  `beforeSend`. A guard (travel time + 5 s, saved to /data before the first
+  never `TRIGGER` nor `RESTART`. The output is a toggle: OPEN needs
+  `allow_open` and CLOSE needs `allow_close` only (both off by default,
+  independent; decision of 2026-10-26), checked on arrival, before the session
+  is used and in `beforeSend`; a kept close checks `allow_close` again when it
+  leaves. A guard (travel time + 5 s, saved to /data before the first
   byte) follows every pulse: ours, another key's `RelayTrigger`, the manual
   button, an `ERR_RELAY_BUSY` answer (never sent again); a close guard is
   lifted early by a fresh "closed" only. The history replayed at a new

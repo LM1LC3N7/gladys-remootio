@@ -15,7 +15,9 @@ import { D, F, NOW, advanceUntil, createAll, press, setup, tick, until } from '.
 const statusFr = (gladys) => gladys.fake.connectionStatus.message.fr;
 
 test('a session: identity, discovery (buttons, never a switch), state, transport', async (t) => {
-  const { gladys, app, fake, ready, advance } = await setup(t, { config: { allow_open: false } });
+  const { gladys, app, fake, ready, advance } = await setup(t, {
+    config: { allow_open: false, allow_close: false },
+  });
   await ready();
   assert.deepEqual(
     fake.received.slice(0, 2).map((r) => r.type),
@@ -50,7 +52,9 @@ test('a session: identity, discovery (buttons, never a switch), state, transport
 });
 
 test('commands are off by default: Open AND Close refused, nothing sent', async (t) => {
-  const { gladys, fake, ready } = await setup(t, { config: { allow_open: undefined } });
+  const { gladys, fake, ready } = await setup(t, {
+    config: { allow_open: undefined, allow_close: undefined },
+  });
   await ready();
   await createAll(gladys);
   const open = await press(gladys, 'open');
@@ -59,9 +63,85 @@ test('commands are off by default: Open AND Close refused, nothing sent', async 
   fake.state = 'open';
   const close = await press(gladys, 'close');
   assert.equal(close.success, false);
-  assert.match(close.error, /Fermer déclenche la même sortie qu’ouvrir/);
+  assert.match(close.error, /La fermeture est désactivée dans la configuration/);
   assert.deepEqual(fake.actions(), ['QUERY'], 'only the QUERY of the authentication');
   assert.equal(fake.pulses.length, 0);
+});
+
+test('close needs allow_close only: refused without it even with allow_open', async (t) => {
+  const { gladys, fake, ready } = await setup(t, {
+    config: { allow_open: true, allow_close: false },
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  const close = await press(gladys, 'close');
+  assert.equal(close.success, false);
+  assert.match(close.error, /La fermeture est désactivée dans la configuration/);
+  assert.equal(fake.pulses.length, 0);
+  assert.match(statusFr(gladys), /Fermeture désactivée/);
+});
+
+test('close is accepted with allow_close alone; open stays refused without allow_open', async (t) => {
+  const { gladys, fake, ready } = await setup(t, {
+    config: { allow_open: false, allow_close: true },
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  const open = await press(gladys, 'open');
+  assert.equal(open.success, false);
+  assert.match(open.error, /L’ouverture est désactivée/);
+  assert.equal(fake.pulses.length, 0);
+  assert.deepEqual(await press(gladys, 'close'), { success: true });
+  assert.deepEqual(
+    fake.pulses.map((p) => p.type),
+    ['CLOSE'],
+  );
+  assert.match(statusFr(gladys), /Ouverture désactivée/);
+});
+
+test('close: allow_close is read again right before the frame is written', async (t) => {
+  const { gladys, app, fake, ready } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  const save = app.saveStrict.bind(app);
+  // The option is unticked while the guard is being saved, after the first checks.
+  app.saveStrict = async (...args) => {
+    app.config = { ...app.config, allowClose: false };
+    return save(...args);
+  };
+  const close = await press(gladys, 'close');
+  assert.equal(close.success, false);
+  assert.match(close.error, /La fermeture est désactivée/);
+  assert.equal(fake.pulses.length, 0, 'nothing written');
+  assert.equal(app.guards.get(SERIAL), undefined, 'the guard is removed');
+});
+
+test('a kept close is dropped when allow_close is unticked during the outage', async (t) => {
+  const { gladys, app, fake, ready, advance, store } = await setup(t, {
+    fake: await startFakeRemootio({ state: 'open' }),
+  });
+  await ready();
+  await createAll(gladys);
+  fake.silent = true;
+  fake.kick();
+  await until(() => gladys.fake.connectionStatus.connected === false);
+  const pending = press(gladys, 'close');
+  for (let i = 0; i < 16; i += 1) {
+    await tick();
+    await advance(250);
+  }
+  assert.match((await pending).error, /La fermeture est gardée/);
+  assert.ok(store.data.pendingCloses[SERIAL]);
+  app.config = { ...app.config, allowClose: false };
+  fake.silent = false;
+  fake.kick();
+  await advanceUntil(advance, () => store.data.pendingCloses[SERIAL] === undefined);
+  assert.equal(fake.pulses.length, 0, 'the kept close did not leave');
+  assert.match(statusFr(gladys), /la fermeture gardée n’est pas partie \(fermeture désactivée\)/);
 });
 
 test('open: the guard is in /data before the frame is written; then held for the travel time', async (t) => {

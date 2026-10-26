@@ -39,6 +39,7 @@ test('keys: 64 hex digits, spaces and case ignored; otherwise only a length', ()
 test('the configuration: off by default, travel time bounded, slots', () => {
   const empty = normalizeConfig({});
   assert.equal(empty.allowOpen, false);
+  assert.equal(empty.allowClose, false);
   assert.equal(empty.travelTime, 30_000);
   assert.ok(empty.slots.every((s) => !s.configured && !s.usable));
   const c = normalizeConfig({
@@ -46,16 +47,21 @@ test('the configuration: off by default, travel time bounded, slots', () => {
     secret_key_1: KEY,
     auth_key_1: KEY.toUpperCase(),
     allow_open: 'yes',
+    allow_close: 'yes',
     travel_time: '500',
     host_2: '10.0.0.3',
   });
   assert.equal(c.allowOpen, false, 'only true allows');
+  assert.equal(c.allowClose, false, 'only true allows');
   assert.equal(c.travelTime, 120_000);
   assert.equal(c.slots[0].usable, true);
   assert.equal(c.slots[1].configured, true);
   assert.equal(c.slots[1].usable, false);
   assert.deepEqual(c.slots[1].keyProblems.secret, { problem: 'missing' });
   assert.equal(normalizeConfig({ allow_open: true }).allowOpen, true);
+  assert.equal(normalizeConfig({ allow_open: true }).allowClose, false, 'independent');
+  assert.equal(normalizeConfig({ allow_close: true }).allowClose, true);
+  assert.equal(normalizeConfig({ allow_close: true }).allowOpen, false, 'independent');
   assert.equal(normalizeConfig({ travel_time: '' }).travelTime, 30_000);
   assert.equal(normalizeConfig({ travel_time: 1 }).travelTime, 10_000);
   // A change of keys changes the generation; the generation is a hash, never a key.

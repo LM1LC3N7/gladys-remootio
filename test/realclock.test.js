@@ -30,7 +30,13 @@ function realApp(t, fake, speed) {
     setInterval: (fn, ms) => setInterval(fn, Math.max(1, ms) / speed),
     clearInterval: (id) => clearInterval(id),
   };
-  const config = { host_1: fake.host, secret_key_1: SECRET, auth_key_1: AUTH, allow_open: true };
+  const config = {
+    host_1: fake.host,
+    secret_key_1: SECRET,
+    auth_key_1: AUTH,
+    allow_open: true,
+    allow_close: true,
+  };
   const gladys = createFakeGladys({ selector: 'remootio', config });
   const quiet = () => {};
   const logger = { info: quiet, warn: quiet, error: quiet, debug: quiet };

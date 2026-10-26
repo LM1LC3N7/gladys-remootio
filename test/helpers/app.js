@@ -52,6 +52,7 @@ export async function setup(t, { config = {}, fake, store, devices = [], start =
     secret_key_1: SECRET,
     auth_key_1: AUTH,
     allow_open: true,
+    allow_close: true,
     ...config,
   };
   const gladys = createFakeGladys({ selector: SELECTOR, config: fullConfig, devices });

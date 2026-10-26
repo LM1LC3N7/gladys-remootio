@@ -33,7 +33,7 @@ const CLOSE_DROPPED = {
   ),
   otherKey: both('another key operated the door', 'une autre clé a actionné la porte'),
   relayBusy: both('the output was being driven', 'la sortie était en train d’être actionnée'),
-  commandsOff: both('commands disabled', 'commandes désactivées'),
+  closeOff: both('closing disabled', 'fermeture désactivée'),
   tries: both('3 tries without success', '3 essais sans succès'),
 };
 
@@ -105,8 +105,16 @@ export const T = {
       `Remootio ${slot} : ${next} répond avec ces clés là où était ${previous} ; ${previous} n’est plus commandé.`,
     ),
   commandsOff: both(
-    'Commands off ("Allow opening and closing"): the doors are only read, Open and Close are refused.',
-    'Commandes désactivées (« Autoriser l’ouverture et la fermeture ») : les portes sont seulement lues, Ouvrir et Fermer sont refusés.',
+    'Commands off ("Allow opening" and "Allow closing"): the doors are only read, Open and Close are refused.',
+    'Commandes désactivées (« Autoriser l’ouverture » et « Autoriser la fermeture ») : les portes sont seulement lues, Ouvrir et Fermer sont refusés.',
+  ),
+  openOff: both(
+    'Opening off ("Allow opening"): Open is refused.',
+    'Ouverture désactivée (« Autoriser l’ouverture ») : Ouvrir est refusé.',
+  ),
+  closeOff: both(
+    'Closing off ("Allow closing"): Close is refused.',
+    'Fermeture désactivée (« Autoriser la fermeture ») : Fermer est refusé.',
   ),
   notReached: (name, expected) =>
     expected === 'unread'
@@ -151,12 +159,12 @@ export const ERRORS = {
     'Ce Remootio n’est plus dans la configuration (ou un autre répond avec ses clés) : rien n’a été envoyé.',
   ),
   openDisabled: both(
-    'Opening is disabled in the configuration ("Allow opening and closing"): nothing sent.',
-    'L’ouverture est désactivée dans la configuration (« Autoriser l’ouverture et la fermeture ») : rien n’a été envoyé.',
+    'Opening is disabled in the configuration ("Allow opening"): nothing sent.',
+    'L’ouverture est désactivée dans la configuration (« Autoriser l’ouverture ») : rien n’a été envoyé.',
   ),
   closeDisabled: both(
-    'Closing triggers the same output as opening (a gate or door that moved since it was read would stop or reverse): it needs "Allow opening and closing" in the configuration. Nothing sent.',
-    'Fermer déclenche la même sortie qu’ouvrir (un portail ou une porte qui a bougé depuis sa lecture s’arrêterait ou repartirait) : il faut « Autoriser l’ouverture et la fermeture » dans la configuration. Rien n’a été envoyé.',
+    'Closing is disabled in the configuration ("Allow closing"): nothing sent. Closing is the same pulse as opening, so it has its own option.',
+    'La fermeture est désactivée dans la configuration (« Autoriser la fermeture ») : rien n’a été envoyé. Fermer est la même impulsion qu’ouvrir : il a sa propre option.',
   ),
   noKeys: both(
     'The API keys or the address of this Remootio are missing or invalid in the configuration: nothing sent.',

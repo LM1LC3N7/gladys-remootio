@@ -14,6 +14,7 @@ import { keyFromHex } from './remootio/crypto.js';
 /** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
 export const DEFAULT_CONFIG = {
   allow_open: false,
+  allow_close: false,
   travel_time: TRAVEL_TIME.default,
   language: 'fr',
 };
@@ -153,6 +154,7 @@ export function normalizeConfig(raw = {}) {
   return {
     slots: SLOTS.map((n) => slotOf(c, n)),
     allowOpen: strictTrue(c.allow_open),
+    allowClose: strictTrue(c.allow_close),
     /** ms */
     travelTime:
       1000 *

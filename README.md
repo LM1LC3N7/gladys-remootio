@@ -35,8 +35,9 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (RemootioApp)
 - **Commands.** Only the `OPEN` and `CLOSE` actions, never `TRIGGER`: the
   Remootio pulses only when its own sensor reads the door closed / open. The
   pulse is a toggle and Close can still stop, reverse or open a door (moving
-  without the Remootio knowing, or a wrong sensor), so BOTH are off by
-  default ("Allow opening and closing"). A guard (travel time + 5 s, saved to
+  without the Remootio knowing, or a wrong sensor), so both are off by
+  default, each with its own option ("Allow opening", "Allow closing": Close
+  does not need "Allow opening"). A guard (travel time + 5 s, saved to
   `/data` before the frame is written) refuses another pulse while the door
   may move; a `RelayTrigger` of another key, the manual button or an
   `ERR_RELAY_BUSY` answer set it too (nothing is sent again). Before a pulse

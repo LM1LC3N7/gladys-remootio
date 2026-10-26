@@ -95,6 +95,7 @@ test('the configuration matches the code; opening is off', () => {
     'the core keeps GLADYS_* keys',
   );
   assert.equal(fields.allow_open.default, false);
+  assert.equal(fields.allow_close.default, false);
   assert.deepEqual(
     [fields.travel_time.min, fields.travel_time.max, fields.travel_time.default],
     [TRAVEL_TIME.min, TRAVEL_TIME.max, TRAVEL_TIME.default],

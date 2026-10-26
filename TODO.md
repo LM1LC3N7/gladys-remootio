@@ -83,10 +83,13 @@ up to date at the end of every milestone.
     sensor reads closed (OPEN) / open (CLOSE) when the action arrives, the
     freshest read possible; no QUERY of ours before (it would read the same
     sensor earlier). TRIGGER (a blind toggle) and RESTART are never sent;
-  - BOTH behind `allow_open` (decision of Louis, 2026-10-25, as
-    gladys-opengarage and ismartgate): "open" for the sensor also means
-    "moving", where CLOSE pulses and stops or reverses the door. This is the
-    one exception to "closing is never blocked", and the docs list it;
+  - OPEN behind `allow_open`, CLOSE behind `allow_close` only (decision of
+    Louis, 2026-10-26; before, 2026-10-25, CLOSE needed `allow_open`), both
+    off by default and independent: CLOSE can open or stop a door closing
+    without the Remootio knowing it, or with a wrong sensor. This is the one
+    exception to "closing is never blocked", and the docs list it. Updating
+    from 0.1.1: `allow_close` is NOT ticked automatically (decision of Louis);
+    the CHANGELOG ("Changed") and the docs say it;
   - the guard: set and saved (awaited) in `beforeSend`, the deadline and
     every check made again after the save; removed only when the Remootio
     answers that nothing moved (relayTriggered false, ERR_*) or when the
@@ -118,7 +121,7 @@ up to date at the end of every milestone.
     confirmation" (guard kept, never resent);
   - a close not written in time is kept in /data and sent at the next
     session, the reconnection tried every 5 s meanwhile, within 2 minutes of
-    the click, 3 tries at most, only with `allow_open`, never during a guard;
+    the click, 3 tries at most, only with `allow_close` (read again when it leaves), never during a guard;
     dropped by an open that leaves, another key's pulse, ERR_RELAY_BUSY, or
     the history replayed at the reconnection showing the door moved during
     the outage (StateChange, RelayTrigger, ManualButtonPushed; review r1,
@@ -159,9 +162,6 @@ up to date at the end of every milestone.
   replaced device).
 - Protocol limit: no client nonce in the authentication; someone recording
   the LAN can replay a whole session. Not fixable on our side.
-- Pending decision (Louis): a separate "Allow closing" option (`allow_close`)
-  next to "Allow opening", proposed by review r1; until then Close needs
-  `allow_open`, as decided on 2026-10-25.
 - A command before the configuration is read is refused with "configuration
   not loaded yet" (m5).
 - Bounds: a message 16 KB at most (cut before it is read whole), 200

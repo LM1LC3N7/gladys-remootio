@@ -166,20 +166,34 @@
         "fr": "Ouverture et fermeture"
       },
       "description": {
-        "en": "The door has two buttons, never a switch. The Remootio output drives the opener with a toggle pulse: it opens a closed door, closes an open one, stops or reverses a moving one. Gladys only sends the Open and Close actions: the Remootio pulses only when its own sensor reads the door closed (Open) or open (Close); without a sensor it refuses both. Close can still stop, reverse or open the door: a door closing without the Remootio knowing it (the opener's remote, a wall button, its automatic close), or a sensor reading open on a closed door (cut wire). Both buttons are therefore refused until you allow them below. After a pulse (from Gladys, or another Remootio key when the API runs with logging), the next one waits for the travel time below plus 5 s. A close that cannot leave is kept and sent up to 2 minutes later. Without the permission, a scene or a voice assistant \"close the gate\" is refused too.",
-        "fr": "La porte a deux boutons, jamais un interrupteur. La sortie du Remootio commande le moteur par une impulsion bascule : elle ouvre une porte fermée, ferme une porte ouverte, arrête ou inverse une porte en mouvement. Gladys n'envoie que les actions Ouvrir et Fermer : le Remootio n'actionne sa sortie que si son capteur lit la porte fermée (Ouvrir) ou ouverte (Fermer) ; sans capteur, il refuse les deux. Fermer peut quand même arrêter, inverser ou ouvrir la porte : porte en train de se fermer à l'insu du Remootio (télécommande, bouton mural, fermeture automatique du moteur), ou capteur qui lit ouvert sur une porte fermée (fil coupé). Les deux boutons sont donc refusés tant que vous ne les autorisez pas ci-dessous. Après une impulsion (de Gladys, ou d'une autre clé Remootio si l'API a la journalisation), la suivante attend la durée de course plus 5 s. Une fermeture qui ne peut pas partir est gardée et envoyée jusqu'à 2 minutes plus tard."
+        "en": "The door has two buttons, never a switch. The output drives the opener with a toggle pulse. Gladys only sends the Open and Close actions: the Remootio pulses only when its own sensor reads the door closed (Open) or open (Close); without a sensor it refuses both. Each button has its own option, both off by default: Close can stop, reverse or open a door closing without the Remootio knowing it (remote, wall button, automatic close), or with a wrong sensor, so it does not depend on Open. After a pulse, the next one waits for the travel time below plus 5 s. A close that cannot leave is kept and sent up to 2 minutes later, if still allowed. Updating from 0.1.1: Close used to need \"Allow opening\"; tick \"Allow closing\" to keep closing.",
+        "fr": "La porte a deux boutons, jamais un interrupteur. La sortie commande le moteur par une impulsion bascule. Gladys n'envoie que les actions Ouvrir et Fermer : le Remootio n'actionne sa sortie que si son capteur lit la porte fermée (Ouvrir) ou ouverte (Fermer) ; sans capteur, il refuse les deux. Chaque bouton a sa propre option, toutes deux désactivées par défaut : Fermer peut arrêter, inverser ou ouvrir une porte en train de se fermer à l'insu du Remootio (télécommande, bouton mural, fermeture automatique) ou avec un capteur faux, donc il ne dépend pas d'Ouvrir. Après une impulsion, la suivante attend la durée de course plus 5 s. Une fermeture qui ne peut pas partir est gardée et envoyée jusqu'à 2 minutes plus tard, si elle est encore autorisée. Mise à jour depuis la 0.1.1 : Fermer exigeait « Autoriser l'ouverture » ; cochez « Autoriser la fermeture » pour continuer à fermer."
       }
     },
     {
       "key": "allow_open",
       "type": "boolean",
       "label": {
-        "en": "Allow opening and closing",
-        "fr": "Autoriser l'ouverture et la fermeture"
+        "en": "Allow opening",
+        "fr": "Autoriser l'ouverture"
       },
       "description": {
-        "en": "Off by default: the doors are only read. On: the dashboard, the scenes and the voice assistants can open AND close the gate or garage door (the same pulse).",
-        "fr": "Désactivé par défaut : les portes sont seulement lues. Activé : le tableau de bord, les scènes et les assistants vocaux peuvent ouvrir ET fermer le portail ou la porte de garage (la même impulsion)."
+        "en": "Off by default: the doors are only read. On: the dashboard, the scenes and the voice assistants can open the gate or garage door.",
+        "fr": "Désactivé par défaut : les portes sont seulement lues. Activé : le tableau de bord, les scènes et les assistants vocaux peuvent ouvrir le portail ou la porte de garage."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "allow_close",
+      "type": "boolean",
+      "label": {
+        "en": "Allow closing",
+        "fr": "Autoriser la fermeture"
+      },
+      "description": {
+        "en": "Off by default. On: the dashboard, the scenes and the voice assistants can close the gate or garage door, without needing \"Allow opening\". Close is the same pulse as Open: on a door already closing without the Remootio knowing it, or with a wrong sensor, it can stop, reverse or open it.",
+        "fr": "Désactivé par défaut. Activé : le tableau de bord, les scènes et les assistants vocaux peuvent fermer le portail ou la porte de garage, sans avoir besoin de « Autoriser l'ouverture ». Fermer est la même impulsion qu'ouvrir : sur une porte déjà en train de se fermer à l'insu du Remootio, ou avec un capteur faux, elle peut l'arrêter, l'inverser ou l'ouvrir."
       },
       "required": false,
       "default": false

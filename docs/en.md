@@ -41,15 +41,18 @@ door, closes an open one, and stops or reverses a moving one. Therefore:
 - Gladys only sends the **OPEN** and **CLOSE** actions of the API, never the plain pulse (TRIGGER): the
   Remootio only drives its output when **its own sensor** reads the door closed (Open) or open (Close), when
   the action arrives. Without a status sensor it refuses both.
-- **Open AND Close are off by default**; tick "Allow opening and closing" to use them (decision of
-  2026-10-25, the same as for OpenGarage and ismartgate), because **Close can open or stop the door** in these
-  cases:
+- **Open and Close are off by default, each with its own option**: "Allow opening" and "Allow closing"
+  (decision of 2026-10-26). Close does not need "Allow opening", so you can close at night without allowing
+  remote opening. Close has its own option because **it can open or stop the door** in these cases:
   - **a door closing without the Remootio knowing it**: the opener's own remote, a wall button, the opener's
     automatic close, a Remootio key while the API runs without logging, or a travel time set too short. The
     sensor reads "open" down to the bottom, and the pulse stops the door or sends it back up;
   - **a sensor that reads "open" on a closed door** (a cut wire, a magnet off, an inverted logic): Close
     becomes a blind pulse and opens the door. Check the state shown in the Remootio app before automating a
     close.
+- **Updating from 0.1.1**: Close used to need "Allow opening". Now it needs "Allow closing" only, which is
+  **not ticked automatically**: if you had ticked "Allow opening" to be able to close, tick "Allow closing"
+  too, or Close is refused.
 - After a pulse (from Gladys, from another Remootio key or the manual button when the API runs with logging,
   or an output already being driven), the next one waits for the configured **travel time** (30 s by default)
   plus 5 s. After a close, only until the door is read closed. This guard is written to `/data` before the
@@ -58,10 +61,11 @@ door, closes an open one, and stops or reverses a moving one. Therefore:
 
 ### When a command is refused
 
-Open or Close is refused, with nothing sent, in these cases:
+Open or Close is refused, with nothing sent, in these cases (each button has its own option):
 
 - the configuration is not loaded yet (it is asked again to Gladys);
-- "Allow opening and closing" is not ticked;
+- Open: "Allow opening" is not ticked;
+- Close: "Allow closing" is not ticked (even if "Allow opening" is);
 - the address or a key of this Remootio is missing or invalid, or this Remootio is no longer in the
   configuration, or another Remootio answers at its address;
 - the keys were refused by the Remootio (see below);
@@ -86,7 +90,7 @@ detection) then protect someone under the door. It is dropped, and the status sa
 - the Remootio could not be reached within 2 minutes, or 3 tries did not succeed;
 - the history the Remootio sends at the reconnection shows that the door moved during the outage;
 - another Remootio key or the manual button operated the door, or the output was being driven;
-- "Allow opening and closing" was unticked.
+- "Allow closing" was unticked (it is read again at the moment the close leaves).
 
 An opening that left meanwhile cancels it without a message.
 

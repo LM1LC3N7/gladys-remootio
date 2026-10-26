@@ -41,8 +41,9 @@ une porte fermée, ferme une porte ouverte, et arrête ou inverse une porte en m
 - Gladys n'envoie que les actions **OPEN** et **CLOSE** de l'API, jamais l'impulsion simple (TRIGGER) : le
   Remootio n'actionne sa sortie que si **son propre capteur** lit la porte fermée (Ouvrir) ou ouverte
   (Fermer), au moment où l'action arrive. Sans capteur d'état, il refuse les deux.
-- **Ouvrir ET Fermer sont désactivés par défaut** ; cochez « Autoriser l'ouverture et la fermeture » pour les
-  utiliser (décision du 2026-10-25, la même que pour OpenGarage et ismartgate), car **Fermer peut ouvrir ou
+- **Ouvrir et Fermer sont désactivés par défaut, chacun avec sa propre option** : « Autoriser l'ouverture » et
+  « Autoriser la fermeture » (décision du 2026-10-26). Fermer n'exige pas « Autoriser l'ouverture » : on peut
+  fermer la nuit sans autoriser l'ouverture à distance. Fermer a sa propre option parce qu'**il peut ouvrir ou
   arrêter la porte** dans ces cas :
   - **une porte en train de se fermer sans que le Remootio le sache** : télécommande d'origine du moteur,
     bouton mural, fermeture automatique du moteur, clé Remootio quand l'API est sans journalisation, ou
@@ -51,6 +52,9 @@ une porte fermée, ferme une porte ouverte, et arrête ou inverse une porte en m
   - **un capteur qui lit « ouverte » sur une porte fermée** (fil coupé, aimant décollé, logique inversée) :
     Fermer devient une impulsion à l'aveugle et ouvre la porte. Vérifiez l'état affiché dans l'application
     Remootio avant d'automatiser une fermeture.
+- **Mise à jour depuis la 0.1.1** : Fermer exigeait « Autoriser l'ouverture ». Il exige maintenant seulement
+  « Autoriser la fermeture », qui n'est **pas cochée automatiquement** : si vous aviez coché « Autoriser
+  l'ouverture » pour pouvoir fermer, cochez aussi « Autoriser la fermeture », sinon Fermer est refusé.
 - Après une impulsion (de Gladys, d'une autre clé Remootio ou du bouton manuel si l'API est activée avec
   journalisation, ou une sortie déjà en train d'être actionnée), la suivante attend la **durée de course**
   configurée (30 s par défaut) plus 5 s. Après une fermeture, elle attend seulement jusqu'à ce que la porte
@@ -60,10 +64,11 @@ une porte fermée, ferme une porte ouverte, et arrête ou inverse une porte en m
 
 ### Les cas où une commande est refusée
 
-Ouvrir ou Fermer est refusé, sans rien envoyer, dans ces cas :
+Ouvrir ou Fermer est refusé, sans rien envoyer, dans ces cas (chaque bouton a sa propre option) :
 
 - la configuration n'est pas encore chargée (elle est redemandée à Gladys) ;
-- l'option « Autoriser l'ouverture et la fermeture » n'est pas cochée ;
+- Ouvrir : l'option « Autoriser l'ouverture » n'est pas cochée ;
+- Fermer : l'option « Autoriser la fermeture » n'est pas cochée (même si « Autoriser l'ouverture » l'est) ;
 - l'adresse ou une clé de ce Remootio manque ou est invalide, ou ce Remootio n'est plus dans la configuration,
   ou un autre Remootio répond à son adresse ;
 - les clés ont été refusées par le Remootio (voir plus bas) ;
@@ -90,7 +95,7 @@ dit, si :
 - l'historique que le Remootio renvoie à la reconnexion montre que la porte a bougé pendant la coupure ;
 - une autre clé Remootio ou le bouton manuel a actionné la porte, ou la sortie était en train d'être
   actionnée ;
-- l'option « Autoriser l'ouverture et la fermeture » a été décochée.
+- l'option « Autoriser la fermeture » a été décochée (elle est relue au moment où la fermeture part).
 
 Une ouverture partie entre-temps l'annule sans message.
 

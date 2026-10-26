@@ -10,6 +10,17 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+### Changed
+
+- Close has its own option, "Allow closing" (`allow_close`), off by default
+  and independent of "Allow opening" (`allow_open`, now for Open only).
+  Close no longer needs "Allow opening", so a door can be closed at night
+  without allowing remote opening. The option is read again right before the
+  frame is written, and a kept close checks it again when it leaves.
+  **Updating from 0.1.1**: if you had ticked "Allow opening" to be able to
+  close, Close is now refused until you tick "Allow closing"; it is not ticked
+  automatically.
+
 ## [0.1.1] - 2026-10-26
 
 ### Added
