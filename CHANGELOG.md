@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
 ### Added
 
 - Remootio gate and garage door controllers over their local Websocket API,
@@ -28,3 +30,6 @@ the notes of the version's GitHub Release.
   connection attempts until other keys or another address are saved, or
   "Check the Remootio devices" succeeds; another Remootio at the address is
   said as such.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-remootio/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-remootio/releases/tag/v0.1.1
