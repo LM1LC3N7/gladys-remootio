@@ -1,177 +1,248 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Remootio",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Remootio gate and garage door controllers, locally: state, open and close.",
+    "fr": "Contrôleurs de portail et de porte de garage Remootio, en local : état, ouvrir, fermer."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-remootio:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-remootio/main/cover.png",
+  "categories": ["security"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Remootio, on your local network",
+        "fr": "Votre Remootio, sur votre réseau local"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "The state of the gate or garage door (with the Remootio status sensor), and Open and Close buttons, through the local Websocket API of each Remootio (up to two), without the Remootio cloud. Type the address and the two API keys below, then add the device from the Discovery tab. Never tested with a real device. Unofficial integration, not affiliated with Remootio.",
+        "fr": "L'état du portail ou de la porte de garage (avec le capteur d'état du Remootio), et des boutons Ouvrir et Fermer, par l'API Websocket locale de chaque Remootio (deux au plus), sans le cloud Remootio. Saisissez l'adresse et les deux clés d'API ci-dessous, puis ajoutez l'appareil depuis l'onglet Découverte. Jamais testé avec un vrai appareil. Intégration non officielle, sans lien avec Remootio."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-remootio/blob/main/docs/fr.md",
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-remootio/blob/main/docs/en.md",
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
+        },
+        {
+          "url": "https://github.com/remootio/remootio-api-documentation",
+          "label": {
+            "en": "Remootio API documentation",
+            "fr": "Documentation de l'API Remootio"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "device_1",
+      "type": "section",
+      "label": {
+        "en": "Remootio 1",
+        "fr": "Remootio 1"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "Your Remootio: its address and its two API keys. In the Remootio app (with the master key), open Device software, then Remootio Websocket API, and enable the API (preferably \"with logging\": the pulses of the other keys are then seen, see below). The app then shows the API Secret Key, the API Auth Key and the IP address. Give the Remootio a fixed IP address in your router.",
+        "fr": "Votre Remootio : son adresse et ses deux clés d'API. Dans l'application Remootio (avec la clé maître), ouvrez Device software, puis Remootio Websocket API, et activez l'API (de préférence « avec journalisation » : les impulsions des autres clés sont alors vues, voir plus bas). L'application affiche alors l'API Secret Key, l'API Auth Key et l'adresse IP. Donnez au Remootio une adresse IP fixe dans votre box."
+      }
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "host_1",
+      "type": "string",
+      "label": {
+        "en": "IP address",
+        "fr": "Adresse IP"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "For example 192.168.1.115 (port 8080 of the Websocket API; add :port only if it differs).",
+        "fr": "Par exemple 192.168.1.115 (port 8080 de l'API Websocket ; ajoutez :port seulement s'il diffère)."
+      },
+      "placeholder": {
+        "en": "192.168.1.115",
+        "fr": "192.168.1.115"
+      },
+      "required": false
     },
     {
-      "key": "unit",
+      "key": "secret_key_1",
+      "type": "secret",
+      "label": {
+        "en": "API Secret Key",
+        "fr": "API Secret Key"
+      },
+      "description": {
+        "en": "64 hexadecimal digits, shown by the Remootio app when the Websocket API is enabled. This field is kept by Gladys in its database, never shown again, and only used with this Remootio, on your local network.",
+        "fr": "64 chiffres hexadécimaux, affichés par l'application Remootio quand l'API Websocket est activée. Ce champ est gardé par Gladys dans sa base, jamais réaffiché, et sert seulement avec ce Remootio, sur votre réseau local."
+      },
+      "required": false
+    },
+    {
+      "key": "auth_key_1",
+      "type": "secret",
+      "label": {
+        "en": "API Auth Key",
+        "fr": "API Auth Key"
+      },
+      "description": {
+        "en": "64 hexadecimal digits, shown by the Remootio app when the Websocket API is enabled. This field is kept by Gladys in its database, never shown again, and only used with this Remootio, on your local network.",
+        "fr": "64 chiffres hexadécimaux, affichés par l'application Remootio quand l'API Websocket est activée. Ce champ est gardé par Gladys dans sa base, jamais réaffiché, et sert seulement avec ce Remootio, sur votre réseau local."
+      },
+      "required": false
+    },
+    {
+      "key": "device_2",
+      "type": "section",
+      "label": {
+        "en": "Remootio 2",
+        "fr": "Remootio 2"
+      },
+      "description": {
+        "en": "A second Remootio (another gate or garage door), optional: same fields.",
+        "fr": "Un deuxième Remootio (un autre portail ou une autre porte de garage), facultatif : mêmes champs."
+      }
+    },
+    {
+      "key": "host_2",
+      "type": "string",
+      "label": {
+        "en": "IP address",
+        "fr": "Adresse IP"
+      },
+      "description": {
+        "en": "For example 192.168.1.115 (port 8080 of the Websocket API; add :port only if it differs).",
+        "fr": "Par exemple 192.168.1.115 (port 8080 de l'API Websocket ; ajoutez :port seulement s'il diffère)."
+      },
+      "placeholder": {
+        "en": "192.168.1.115",
+        "fr": "192.168.1.115"
+      },
+      "required": false
+    },
+    {
+      "key": "secret_key_2",
+      "type": "secret",
+      "label": {
+        "en": "API Secret Key",
+        "fr": "API Secret Key"
+      },
+      "description": {
+        "en": "64 hexadecimal digits, shown by the Remootio app when the Websocket API is enabled. This field is kept by Gladys in its database, never shown again, and only used with this Remootio, on your local network.",
+        "fr": "64 chiffres hexadécimaux, affichés par l'application Remootio quand l'API Websocket est activée. Ce champ est gardé par Gladys dans sa base, jamais réaffiché, et sert seulement avec ce Remootio, sur votre réseau local."
+      },
+      "required": false
+    },
+    {
+      "key": "auth_key_2",
+      "type": "secret",
+      "label": {
+        "en": "API Auth Key",
+        "fr": "API Auth Key"
+      },
+      "description": {
+        "en": "64 hexadecimal digits, shown by the Remootio app when the Websocket API is enabled. This field is kept by Gladys in its database, never shown again, and only used with this Remootio, on your local network.",
+        "fr": "64 chiffres hexadécimaux, affichés par l'application Remootio quand l'API Websocket est activée. Ce champ est gardé par Gladys dans sa base, jamais réaffiché, et sert seulement avec ce Remootio, sur votre réseau local."
+      },
+      "required": false
+    },
+    {
+      "key": "commands",
+      "type": "section",
+      "label": {
+        "en": "Opening and closing",
+        "fr": "Ouverture et fermeture"
+      },
+      "description": {
+        "en": "The door has two buttons, never a switch. The output of a Remootio drives the opener with a pulse that is a toggle: the same pulse opens a closed door, closes an open one, and stops or reverses a moving one. Gladys only sends the Open and Close actions of the API: the Remootio pulses only when its own sensor reads the door closed (Open) or open (Close); without a status sensor it refuses both. As \"open\" also means \"moving\" for the sensor, closing can stop or reverse a door: both buttons are therefore refused until you allow them below. After a pulse (from Gladys, or from another key when the API runs with logging), the next one waits for the travel time below plus 5 s (a close: until the door is read closed). Without the permission, a scene or a voice assistant \"close the gate\" is refused too.",
+        "fr": "La porte a deux boutons, jamais un interrupteur. La sortie d'un Remootio commande le moteur par une impulsion qui est une bascule : la même impulsion ouvre une porte fermée, ferme une porte ouverte, et arrête ou inverse une porte en mouvement. Gladys n'envoie que les actions Ouvrir et Fermer de l'API : le Remootio n'envoie l'impulsion que si son propre capteur lit la porte fermée (Ouvrir) ou ouverte (Fermer) ; sans capteur d'état, il refuse les deux. Comme « ouverte » veut aussi dire « en mouvement » pour le capteur, fermer peut arrêter ou inverser une porte : les deux boutons sont donc refusés tant que vous ne les autorisez pas ci-dessous. Après une impulsion (de Gladys, ou d'une autre clé quand l'API est activée avec journalisation), la suivante attend la durée de course ci-dessous plus 5 s (une fermeture : jusqu'à ce que la porte soit lue fermée). Sans l'autorisation, une scène ou un assistant vocal « ferme le portail » est refusé aussi."
+      }
+    },
+    {
+      "key": "allow_open",
+      "type": "boolean",
+      "label": {
+        "en": "Allow opening and closing",
+        "fr": "Autoriser l'ouverture et la fermeture"
+      },
+      "description": {
+        "en": "Off by default: the doors are only read. On: the dashboard, the scenes and the voice assistants can open AND close the gate or garage door (the same pulse).",
+        "fr": "Désactivé par défaut : les portes sont seulement lues. Activé : le tableau de bord, les scènes et les assistants vocaux peuvent ouvrir ET fermer le portail ou la porte de garage (la même impulsion)."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "travel_time",
+      "type": "number",
+      "label": {
+        "en": "Longest travel time of the door (s)",
+        "fr": "Durée de course la plus longue de la porte (s)"
+      },
+      "description": {
+        "en": "How long the gate or door takes to open or close completely, in seconds (10 to 120). No other pulse is sent during this time plus 5 s.",
+        "fr": "Le temps que met le portail ou la porte à s'ouvrir ou se fermer complètement, en secondes (10 à 120). Aucune autre impulsion n'est envoyée pendant ce temps plus 5 s."
+      },
+      "required": false,
+      "default": 30,
+      "min": 10,
+      "max": 120
+    },
+    {
+      "key": "language",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
-      "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
-      ]
-    },
-    {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms des fonctionnalités"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Used for the names of the features added from now on, and for the command errors.",
+        "fr": "Sert aux noms des fonctionnalités ajoutées désormais, et aux erreurs des commandes."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français"
+          }
+        },
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "check_devices",
+      "label": {
+        "en": "Check the Remootio devices",
+        "fr": "Vérifier les Remootio"
+      },
+      "description": {
+        "en": "Shows the state of each Remootio. Keys refused earlier are tried once more (at most every 30 s).",
+        "fr": "Affiche l'état de chaque Remootio. Des clés refusées plus tôt sont réessayées une fois (au plus toutes les 30 s)."
+      },
       "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
     }
   ]
 }
