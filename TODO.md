@@ -53,9 +53,11 @@ up to date at the end of every milestone.
   Credited in `THIRD_PARTY_NOTICES.md` (copied into the image with `LICENSE`).
   The documentation repository has no license file: only its description of
   the protocol and its worked example (as test vectors) are used.
-- SDK: `@gladysassistant/integration-sdk ^0.15.0`: 0.16.0 is not published on
-  npm on 2026-10-26 (`npm view` gives 0.15.0); to migrate when it is (types
-  ai/tts/music only, nothing breaking).
+- **SDK `^0.16.0`** (2026-10-27, migration wave 2): 0.16.0 is on npm since
+  2026-10-25 (a stale npm cache said otherwise); it adds the ai, tts and music
+  types; no effect here (`should_poll` explicit, `poll_frequency` unused).
+  `keywords`, `countries` and `gladys_version >= 5.3.0` wait until Gladys 5.3
+  is widespread.
 - Version 0.1.0 in `package.json`, `package-lock.json`, the manifest and the
   `docker_image` tag, set by hand at milestone 1 (the template's 1.0.0 was
   someone else's). The first release (patch) gives 0.1.1; every later

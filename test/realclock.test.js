@@ -2,7 +2,7 @@
 // The app on a REAL moving clock (performance.now, Date.now, setTimeout) and
 // the fake Remootio on a real loopback socket: the liveness PINGs really
 // leave once a minute and the QUERY of every 5 minutes really leaves (time
-// sped up 100 times: a minute is 600 ms, but it is the real clock, moving
+// sped up 20 times: a minute is 3 s, but it is the real clock, moving
 // between any two reads of it); a close goes end to end on the real clock.
 // -----------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@ import { TIMINGS } from '../src/constants.js';
 import { MemoryStore } from '../src/store.js';
 import { AUTH, SECRET, startFakeRemootio } from './helpers/fakeRemootio.js';
 
-const SPEED = 100;
+const SPEED = 20;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The app on the real clock, `speed` times faster. */
