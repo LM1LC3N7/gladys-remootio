@@ -1,6 +1,6 @@
 {
   "name": "gladys-remootio",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Gladys Assistant external integration for Remootio gate and garage door controllers (state, open and close), over their local Websocket API. Unofficial, not affiliated with Remootio.",
   "type": "module",
